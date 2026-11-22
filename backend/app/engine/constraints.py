@@ -6,7 +6,7 @@ never produce an impossible pallet unnoticed. Every engine test runs every resul
 
 from __future__ import annotations
 
-from .model import EPS, PalletSpec, Placement
+from .model import EPS, PalletSpec, Placement, is_stable
 from .pallet_state import DEFAULT_SUPPORT_RATIO, overlap_1d
 
 
@@ -30,6 +30,8 @@ def validate(
             errors.append(f"{tag}: placed dims are not the box's dims")
         if p.spec.this_side_up and abs(p.dz - p.spec.height) > EPS:
             errors.append(f"{tag}: this-side-up box is tipped over")
+        if not p.spec.this_side_up and not is_stable(p.dx, p.dy, p.dz) and not p.spec.needs_standing(spec):
+            errors.append(f"{tag}: stands too tall for its base ({p.dz:g} high on a {min(p.dx, p.dy):g} side)")
         if p.x < -o - EPS or p.y < -o - EPS or p.x + p.dx > spec.length + o + EPS or p.y + p.dy > spec.width + o + EPS:
             errors.append(f"{tag}: outside the pallet footprint plus overhang")
         if p.z < -EPS or p.top > spec.max_load_height + EPS:

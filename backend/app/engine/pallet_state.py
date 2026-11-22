@@ -211,7 +211,7 @@ class PalletState:
         capacity = (s.length + 2 * s.max_overhang) * (s.width + 2 * s.max_overhang) * s.max_load_height
         if self.used_volume + sp.length * sp.width * sp.height > capacity + EPS:
             return False
-        orients = sorted(box.spec.orientations(), key=lambda d: (d[2], -(d[0] * d[1]), -d[0]))
+        orients = sorted(box.spec.orientations(self.spec), key=lambda d: (d[2], -(d[0] * d[1]), -d[0]))
         for (x, y, z) in self.points:
             for (dx, dy, dz) in orients:
                 if self.try_place(box, x, y, z, dx, dy, dz):

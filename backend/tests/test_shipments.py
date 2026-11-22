@@ -190,3 +190,15 @@ def test_tightest_never_more_pallets_than_layered_via_api(acme):
         {"product_id": a, "quantity": 14}, {"product_id": b, "quantity": 11}, {"product_id": c, "quantity": 9}]})
     tightest = calc(acme, sh["id"])["results"]["pallet_count"]
     assert tightest <= layered
+
+
+def test_engine_rule_change_marks_estimates_out_of_date(acme, monkeypatch):
+    from app import engine
+
+    pid = product(acme, "A", SMALL)
+    sh = shipment(acme, [(pid, 10)])
+    calc(acme, sh["id"])
+    assert acme.get(f"/api/shipments/{sh['id']}").json()["stale"] is False
+    monkeypatch.setattr(engine, "ENGINE_VERSION", "test-next")
+    assert acme.get(f"/api/shipments/{sh['id']}").json()["stale"] is True
+    assert calc(acme, sh["id"])["stale"] is False

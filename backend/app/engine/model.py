@@ -16,6 +16,19 @@ from itertools import permutations
 
 EPS = 1e-6
 
+# Bump whenever packing rules change, so saved estimates made under older rules show as
+# "out of date" (it is part of the shipment input fingerprint).
+ENGINE_VERSION = "2"
+
+# Stability: a box that isn't marked this-side-up may not stand on a face whose height is more
+# than this many times the narrower side of that face (no 50" boxes standing on end, no panels
+# on edge). Boxes marked this-side-up keep their marked orientation regardless.
+MAX_STANDING_RATIO = 2.0
+
+
+def is_stable(dx: float, dy: float, dz: float) -> bool:
+    return dz <= MAX_STANDING_RATIO * min(dx, dy) + EPS
+
 
 @dataclass(frozen=True)
 class BoxSpec:
@@ -41,8 +54,8 @@ class BoxSpec:
     def key(self) -> tuple:
         return (self.product_id, self.box_no)
 
-    def orientations(self) -> list[tuple[float, float, float]]:
-        """Allowed (dx, dy, dz) for this box, deduplicated, in a deterministic order.
+    def all_orientations(self) -> list[tuple[float, float, float]]:
+        """Every (dx, dy, dz) the box could be placed in, deduplicated, in a deterministic order.
         A this-side-up box may only turn around the vertical axis."""
         if self.this_side_up:
             cands = [(self.length, self.width, self.height), (self.width, self.length, self.height)]
@@ -53,6 +66,24 @@ class BoxSpec:
             if c not in seen:
                 seen.append(c)
         return seen
+
+    def orientations(self, pallet: "PalletSpec | None" = None) -> list[tuple[float, float, float]]:
+        """Allowed orientations. Boxes not marked this-side-up must pass the stability rule —
+        unless no stable orientation fits the pallet at all (e.g. a 50" box on a 48" deck with no
+        overhang), in which case standing it up is the only option and `needs_standing` says so."""
+        cands = self.all_orientations()
+        if self.this_side_up:
+            return cands
+        stable = [c for c in cands if is_stable(*c)]
+        if pallet is not None and not any(pallet.fits_footprint(*c) for c in stable):
+            return cands
+        return stable
+
+    def needs_standing(self, pallet: "PalletSpec") -> bool:
+        """True when the stability rule has to be waived for this box on this pallet."""
+        if self.this_side_up:
+            return False
+        return not any(pallet.fits_footprint(*c) for c in self.all_orientations() if is_stable(*c))
 
 
 @dataclass(frozen=True)
@@ -70,6 +101,14 @@ class PalletSpec:
     max_total_height: float = 72.0  # floor to top of load, deck included
     max_gross_weight: float = 2500.0  # load + tare
     max_overhang: float = 0.0  # per side
+
+    def fits_footprint(self, dx: float, dy: float, dz: float) -> bool:
+        o = self.max_overhang
+        return (
+            dx <= self.length + 2 * o + EPS
+            and dy <= self.width + 2 * o + EPS
+            and dz <= self.max_load_height + EPS
+        )
 
     @property
     def max_load_height(self) -> float:

@@ -10,13 +10,15 @@ from __future__ import annotations
 from .constraints import validate
 from .expand import ShipmentLine, expand_lines
 from .layered import pack_layered
-from .model import BoxInstance, BoxSpec, PalletResult, PalletSpec, Placement, ShipmentResult
+from .model import ENGINE_VERSION, MAX_STANDING_RATIO, BoxInstance, BoxSpec, PalletResult, PalletSpec, Placement, ShipmentResult
 from .result import finalize_pallet
 from .tightest import pack_tightest, score
 
 MODES = ("layered", "tightest")
 
 __all__ = [
+    "ENGINE_VERSION",
+    "MAX_STANDING_RATIO",
     "BoxInstance",
     "BoxSpec",
     "MODES",
@@ -53,6 +55,16 @@ def pack(lines: list[ShipmentLine], pallet: PalletSpec, mode: str = "layered") -
         warnings.append(
             f"{b.spec.sku} box {b.spec.box_no} ({b.spec.name}): {n} box(es) cannot fit on a pallet "
             f"(too large or too heavy for the pallet type)"
+        )
+
+    stood: dict[tuple, object] = {}
+    for b in boxes:
+        if b.spec.key not in stood and b.spec.needs_standing(pallet):
+            stood[b.spec.key] = b.spec
+    for spec in stood.values():
+        warnings.append(
+            f"{spec.sku} box {spec.box_no} ({spec.name}) is longer than the pallet, so it had to be "
+            f"stood on its side or end. Allow some overhang on the pallet type to lay it flat."
         )
 
     pallets = [finalize_pallet(i + 1, st) for i, st in enumerate(states) if not st.is_empty()]

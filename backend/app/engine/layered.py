@@ -78,7 +78,7 @@ def plan_group(spec: BoxSpec, boxes: list[BoxInstance], pallet: PalletSpec) -> G
     Y = pallet.width + 2 * pallet.max_overhang
     n = len(boxes)
     best = None
-    for (fa, fb, h) in spec.orientations():
+    for (fa, fb, h) in spec.orientations(pallet):
         if fa > fb + EPS:
             continue  # (a, b) and (b, a) give the same patterns
         rects = layer_pattern(fa, fb, X, Y)

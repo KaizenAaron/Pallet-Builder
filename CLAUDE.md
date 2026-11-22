@@ -51,6 +51,16 @@ docker compose up --build                           # app at http://localhost:80
 - **`engine/constraints.validate` is independent of the packers** and re-checks finished
   pallets from placements alone. Every engine test runs every result through it; keep it that way
   when adding packers or rules.
+- **Stability rule** (`engine/model.py`, `MAX_STANDING_RATIO = 2.0`, signed off by the user): a box
+  not marked this-side-up may only stand on a face whose height is ≤ 2× the narrower side of that
+  face — no long boxes on end, no panels on edge. Exception: if *no* stable orientation fits the
+  pallet's footprint plus overhang (e.g. a 50" box on a 48" deck with 0 overhang), standing is
+  allowed and `pack()` adds a warning suggesting overhang. `BoxSpec.orientations(pallet)` applies
+  it for both packers; `constraints.validate` checks it independently (`needs_standing`). This-
+  side-up boxes keep their marked orientation regardless.
+- **`ENGINE_VERSION`** (`engine/model.py`) is part of the shipment input fingerprint. **Bump it
+  whenever packing rules change**, so estimates saved under older rules show "Out of date" instead
+  of silently keeping a layout the current engine wouldn't produce.
 - **Modes**: `layered` = full single-SKU layers (best grid or two-block pattern, heaviest group
   first, non-stackable last), leftovers packed on top with the extreme-point packer. `tightest` =
   best of several extreme-point orderings **and** the layered result, so tightest never needs more

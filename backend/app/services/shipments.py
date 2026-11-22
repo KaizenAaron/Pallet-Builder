@@ -82,6 +82,7 @@ def engine_lines(db: Session, shipment: Shipment) -> list[engine.ShipmentLine]:
 
 def fingerprint(lines: list[engine.ShipmentLine], spec: engine.PalletSpec, mode: str) -> str:
     payload = {
+        "engine": engine.ENGINE_VERSION,  # rule changes make old estimates "out of date"
         "mode": mode,
         "pallet": asdict(spec),
         "lines": [

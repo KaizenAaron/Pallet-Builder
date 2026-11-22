@@ -24,6 +24,11 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
     fragile/non-stackable on top, leftovers as a mixed top layer.
   - **Tightest fit** — mixes boxes freely to use as few pallets as possible. It also considers
     the layered result, so it never needs more pallets than Layered.
+- **Stability:** a box that isn't marked *this side up* never stands on a narrow face — its
+  height may be at most 2× the narrower side it rests on, so long boxes aren't stood on end and
+  flat panels aren't stood on edge. If a box is too long to lie flat on the pallet (e.g. a 50"
+  box on a 48" deck), it's allowed to stand and the estimate says so; allowing an inch or two of
+  overhang on the pallet type lets it lie flat.
 - Every pallet is checked by an independent validator: inside the footprint (plus overhang),
   under the height and weight limits, no overlaps, at least 75 % of each box's base supported,
   upright boxes kept upright, and no box carrying more than its load limit.

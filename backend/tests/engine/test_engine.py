@@ -195,3 +195,66 @@ def test_large_order_is_fast():
         res = run(lines, mode)
         assert sum(counts(res)) == 320
         assert time.perf_counter() - t < 20, mode
+
+
+# ---------------------------------------------------------------- stability rule
+
+
+def _sample_order():
+    """The sample box index's order: 40 fixtures (2 boxes), 30 panels, 200 clips, 60 drivers."""
+    return [
+        line([box("FIX-2400", 1, 50, 8, 6, 22.5), box("FIX-2400", 2, 26, 10, 4, 6, this_side_up=True)], 40),
+        line([box("PANEL", 1, 50, 26, 6, 38, units_per_box=2)], 30),
+        line([box("CLIP", 1, 12, 10, 8, 14, units_per_box=50)], 200),
+        line([box("DRV", 1, 16, 12, 10, 24, units_per_box=20)], 60),
+    ]
+
+
+def test_orientations_respect_standing_ratio():
+    """50×26×6 panel: may lie flat (6 high) only — on edge it would be 26 or 50 high on a 6 side.
+    50×8×6 housing: flat (6 high) or on its side (8 high on a 6 side, 8 ≤ 12); never on end."""
+    panel = box(l=50, w=26, h=6)
+    assert {o[2] for o in panel.orientations()} == {6}
+    housing = box(l=50, w=8, h=6)
+    assert {o[2] for o in housing.orientations()} == {6, 8}
+    cube = box(l=10, w=10, h=10)
+    assert len(cube.orientations()) == 1
+    # an explicit this-side-up box keeps its marked orientation, even if tall
+    tall = box(l=10, w=10, h=30, this_side_up=True)
+    assert {o[2] for o in tall.orientations()} == {30}
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_sample_order_lies_flat_with_one_inch_overhang(mode):
+    """With 1" overhang per side the 50" housings and panels fit lying down, so nothing stands."""
+    pallet = PalletSpec(max_overhang=1.0)
+    res = run(_sample_order(), mode, pallet=pallet)  # run() also validates the stability rule
+    assert res.unplaced == [] and not any("stood" in w for w in res.warnings)
+    for p in res.pallets:
+        for pl in p.placements:
+            if not pl.spec.this_side_up:
+                assert pl.dz <= 2 * min(pl.dx, pl.dy) + 1e-9, (pl.spec.sku, pl.dx, pl.dy, pl.dz)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_too_long_boxes_may_stand_but_are_flagged(mode):
+    """No overhang: a 50" box can't lie on a 48" deck, so standing is allowed (and warned about);
+    every other box still obeys the stability rule."""
+    res = run(_sample_order(), mode)
+    assert res.unplaced == []
+    flagged = [w for w in res.warnings if "stood on its side or end" in w]
+    assert len(flagged) == 2 and any("FIX-2400 box 1" in w for w in flagged) and any("PANEL box 1" in w for w in flagged)
+    for p in res.pallets:
+        for pl in p.placements:
+            if pl.spec.sku in ("CLIP", "DRV"):
+                assert pl.dz <= 2 * min(pl.dx, pl.dy) + 1e-9
+
+
+def test_validator_rejects_a_box_standing_on_end():
+    from app.engine.model import BoxInstance, Placement
+
+    b = BoxInstance(1, box(l=40, w=8, h=6))  # fits lying down, so standing on end isn't allowed
+    errors = validate(PALLET, [Placement(b, 0, 0, 0, 8, 6, 40)])
+    assert any("stands too tall" in e for e in errors)
+    long_box = BoxInstance(2, box(l=50, w=8, h=6))  # can't lie on a 48" deck: standing is allowed
+    assert validate(PALLET, [Placement(long_box, 0, 0, 0, 8, 6, 50)]) == []
