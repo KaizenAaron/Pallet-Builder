@@ -28,7 +28,7 @@ npm run dev        # http://localhost:5173, proxies /api to localhost:8000
 npm run build      # tsc -b && vite build — run this to type-check
 
 # Full stack
-docker compose up --build                           # app at http://localhost:8080
+docker compose up --build                           # app at http://localhost:8081
 ```
 
 ## Non-obvious domain rules (the load-bearing decisions)
