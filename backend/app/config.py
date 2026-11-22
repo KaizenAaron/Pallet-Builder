@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_from: str = ""
+    # When no email could be sent, return verification/reset/invite links in API responses so
+    # they can be shown on screen. Local testing only — must be false in production.
+    email_link_fallback: bool = False
+
+    verify_email_ttl_hours: int = 48
+    password_reset_ttl_minutes: int = 60
+    invite_ttl_days: int = 14
 
 
 @lru_cache

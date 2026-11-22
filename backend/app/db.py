@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+from datetime import datetime, timezone
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -25,3 +28,23 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+@contextmanager
+def system_session():
+    """A session that bypasses row-level security (CLI and other system tasks only)."""
+    from .rls import bypass
+
+    db = SessionLocal()
+    bypass(db)
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+def aware(dt: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes; treat them as UTC so comparisons work on both databases."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt

@@ -1,17 +1,61 @@
-import { useEffect, useState } from "react";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider, RequireAuth, useAuth } from "./auth";
+import Layout from "./components/Layout";
+import AcceptInvitePage from "./pages/AcceptInvite";
+import AccountPage from "./pages/Account";
+import {
+  ForgotPasswordPage,
+  LoginPage,
+  ResetPasswordPage,
+  SignupPage,
+  VerifyEmailPage,
+} from "./pages/AuthPages";
+import CompanySettingsPage from "./pages/CompanySettings";
+import HomePage from "./pages/Home";
+import MembersPage from "./pages/Members";
+import NewCompanyPage from "./pages/NewCompany";
+import PlatformAdminPage from "./pages/PlatformAdmin";
+
+function PlatformOnly({ children }: { children: JSX.Element }) {
+  const { me } = useAuth();
+  return me?.is_platform_admin ? children : <Navigate to="/" replace />;
+}
 
 export default function App() {
-  const [status, setStatus] = useState("checking…");
-  useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((d) => setStatus(d.status))
-      .catch(() => setStatus("backend unreachable"));
-  }, []);
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: 24 }}>
-      <h1>Pallet Builder</h1>
-      <p>API: {status}</p>
-    </main>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/invite/:token" element={<AcceptInvitePage />} />
+          <Route
+            element={
+              <RequireAuth>
+                <Layout />
+              </RequireAuth>
+            }
+          >
+            <Route index element={<HomePage />} />
+            <Route path="/members" element={<MembersPage />} />
+            <Route path="/company" element={<CompanySettingsPage />} />
+            <Route path="/companies/new" element={<NewCompanyPage />} />
+            <Route path="/account" element={<AccountPage />} />
+            <Route
+              path="/admin"
+              element={
+                <PlatformOnly>
+                  <PlatformAdminPage />
+                </PlatformOnly>
+              }
+            />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   );
 }

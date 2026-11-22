@@ -34,7 +34,7 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
 |---|---|---|
 | 1 | Scaffold: backend, frontend, docker compose, Alembic, CI | ✅ |
 | 2 | Packing engine: Layered + constraints + freight class, golden tests | ✅ |
-| 3 | Signup, companies, memberships, company switcher, invites, roles, row-level security | ⏳ |
+| 3 | Signup, companies, memberships, company switcher, invites, roles, row-level security | ✅ |
 | 4 | Products, box index, pallet types, spreadsheet import/template | ⏳ |
 | 5 | Shipments: lines, compute, results | ⏳ |
 | 6 | 3D view | ⏳ |
@@ -95,8 +95,26 @@ docker compose up --build
 The first time takes a few minutes. When the text stops scrolling, open
 **http://localhost:8081**. Leave the PowerShell window open; closing it stops the app.
 
-*Right now the page just says "Pallet Builder — API: ok". That means everything is working.
-Sign-up, companies and the shipment screens arrive in the next phases.*
+**Step 6: Create your account.** Click **Create an account**, fill in your name, email,
+a password (10+ characters) and your company name. Your test server has no email set up, so a
+yellow box shows the verification link that would have been emailed. Click it and you're in.
+The same on-screen fallback is used for password resets and invitations.
+
+**Step 7 (optional): Make yourself a platform admin.** This unlocks the **Platform** page,
+which lists every company on the server and can suspend one. In a **second** PowerShell window:
+
+```powershell
+cd "C:\Users\Loyd\Desktop\Cowork\Cerno\Pallet Builder\Dev"
+docker compose exec backend python cli.py create-platform-admin you@cernogroup.com "a-strong-password" "Your Name"
+```
+
+Use the same email you signed up with to upgrade that account (the password is reset to the
+one you type), or a new email to create a separate admin login.
+
+**Step 8: Try it out.** Invite a teammate under **Members** (copy the invitation link and open
+it in a private/incognito window to play the invitee), create a second company from the company
+menu at the top right and switch between them. Shipments, the box index and the 3D view arrive
+in the next phases.
 
 **Everyday use:** open Docker Desktop, then:
 
@@ -126,6 +144,8 @@ run.
   Start it, wait for the whale, try again.
 - *Start over with an empty database*: `docker compose down -v`, then `docker compose up`.
   This only wipes Pallet Builder's data, never Sales-Rep-Activity's.
+- *"value is not a valid email address"* when signing up: test domains like `.test` or
+  `.local` are rejected. Use a real-looking address (e.g. `name@example.com`).
 
 ## Running it
 
@@ -172,9 +192,14 @@ It's idempotent; the Docker backend also runs it on every start.
 backend/
   app/
     engine/        # pure-Python packing engine (ported verbatim to Odoo in stage 2)
-    api/ connectors/ services/   # filled in by phases 3–9
+    api/           # auth, companies, members, invites, platform admin
+    models.py      # users, companies, memberships, invites, auth tokens, tenant tables
+    tenancy.py     # get_tenant: X-Company-Id + membership check (+ RLS binding)
+    rls.py         # Postgres row-level security policies and session hooks
+    security.py    # passwords, sessions, link tokens
+  cli.py           # create-platform-admin
   alembic/         # migrations
-  tests/engine/    # golden + invariant tests for the engine
+  tests/           # engine golden tests, auth, invites, tenant isolation, RLS (Postgres)
 frontend/
   src/scene/       # framework-agnostic three.js scene (phase 6)
 docker-compose.yml

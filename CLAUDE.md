@@ -63,11 +63,38 @@ docker compose up --build                           # app at http://localhost:80
 
 ## Architecture
 
-- **Tenancy** (phase 3): every tenant table has a non-null `company_id`. The active company comes
-  from the `X-Company-Id` header and is checked against `memberships` in one dependency
-  (`get_tenant`) — never read `company_id` from a request body. Postgres row-level security is
-  the second line of defense. `tests/test_tenancy.py` must prove company A cannot touch company
-  B's data for every tenant endpoint — extend it whenever you add one.
+- **Tenancy**: every tenant table inherits `TenantMixin` (non-null `company_id`). The active
+  company comes from the `X-Company-Id` header and is checked against `memberships` in one
+  dependency (`tenancy.get_tenant` / `require_role`) — never read `company_id` from a request
+  body. Filter tenant queries with `tenancy.scoped(...)`; look up rows by id *and* company so a
+  guessed id from another company is a 404. Roles: `owner` > `admin` > `member`; nobody can grant
+  or invite above their own role, and a company always keeps at least one owner.
+  `tests/test_tenancy.py` must prove company A cannot touch company B's data for every tenant
+  endpoint — add new endpoints to `TENANT_READS` / write cases there.
+- **Row-level security** (`app/rls.py`) is the second wall, Postgres only. `TenantMixin` tables get
+  FORCEd policies keyed on the `app.company_id` setting, which an `after_begin` session hook
+  re-applies every transaction (`bind_company`, called by `get_tenant`). Superusers bypass RLS, so
+  sessions also `SET LOCAL ROLE pallet_app` when allowed. A new tenant table needs an Alembic
+  revision that calls `apply_rls()` again. Code that must see every company (CLI, platform tools)
+  uses `db.system_session()`. `memberships`/`invites` are deliberately *not* RLS'd (they're read
+  before a company is chosen) — app checks + tests protect them. `tests/test_rls.py` only runs on
+  Postgres (CI does; locally: `DATABASE_URL=postgresql+psycopg://… pytest`).
+- **Auth**: Argon2 passwords (10+ chars), JWT in the httpOnly `pb_session` cookie (Bearer also
+  accepted — tests use cookies via separate TestClients). `users.token_version` is in the JWT;
+  bumping it (password change/reset, sign out everywhere) kills all sessions. Signup requires
+  email verification. Signup, resend and forgot-password return identical responses whether or
+  not the account exists (no enumeration). Verification/reset/invite links are single-use and
+  only their SHA-256 is stored.
+- **Email links on screen**: when SMTP isn't configured and `EMAIL_LINK_FALLBACK=true`, those
+  endpoints return the link as `dev_link` and the UI shows it. Local testing only — it must be
+  off on any public server, or anyone could verify an address they don't own. Invite links are
+  always returned to the inviter (copy-and-send is a feature, like Sales-Rep-Activity).
+- **Rate limiting** (`app/ratelimit.py`) is in-memory per process — fine for one Render instance;
+  move it to a shared store before scaling out.
+- **Frontend auth**: `src/auth.tsx` holds `me` and the active company (remembered in
+  localStorage); `src/api.ts` adds `X-Company-Id`. The active company is pushed to the API client
+  synchronously during render — child pages' effects run before the provider's, so doing it in
+  an effect sends their first request without the header.
 - **Schema management**: `Base.metadata.create_all` runs on startup but only creates *missing*
   tables. Schema changes need an Alembic revision in `backend/alembic/versions/`; `0001` is the
   create-all baseline. Guard later revisions with existence checks so they are safe on both fresh
