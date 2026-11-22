@@ -98,7 +98,11 @@ docker compose up --build                           # app at http://localhost:80
 - **Schema management**: `Base.metadata.create_all` runs on startup but only creates *missing*
   tables. Schema changes need an Alembic revision in `backend/alembic/versions/`; `0001` is the
   create-all baseline. Guard later revisions with existence checks so they are safe on both fresh
-  and existing databases. Apply with `alembic upgrade head` (idempotent).
+  and existing databases. Apply with `alembic upgrade head` (idempotent). **Never assume an
+  earlier revision created a table**: databases from phase 1 were stamped `0001` when it had no
+  models to create, so a revision that touches new tables must create them first
+  (`Base.metadata.create_all(bind, checkfirst=True)`, as `0002` does). `tests/test_migrations.py`
+  upgrades a phase-1-shaped database to head on Postgres — keep it passing.
 - **Connectors** (phase 9): Odoo-specific logic lives only in `backend/app/connectors/`.
 - **Serving**: in dev, Vite proxies `/api`; in Docker, nginx (`frontend/nginx.conf`) serves the
   SPA and proxies `/api` to the backend (upload limit 100m for spreadsheet imports — keep it).

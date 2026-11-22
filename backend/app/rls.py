@@ -16,7 +16,7 @@ SQLite has no RLS: everything here is a no-op there.
 
 from __future__ import annotations
 
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,10 @@ def apply_rls(conn: Connection) -> None:
         "(company_id = NULLIF(current_setting('app.company_id', true), '')::integer "
         "OR current_setting('app.bypass_rls', true) = 'on')"
     )
+    existing = set(inspect(conn).get_table_names())
     for table in tenant_tables():
+        if table not in existing:  # created later; its own migration calls apply_rls() again
+            continue
         conn.execute(text(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'))
         conn.execute(text(f'ALTER TABLE "{table}" FORCE ROW LEVEL SECURITY'))
         conn.execute(text(f'DROP POLICY IF EXISTS {POLICY} ON "{table}"'))
