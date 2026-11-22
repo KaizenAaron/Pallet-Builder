@@ -78,6 +78,8 @@ docker compose up --build                           # app at http://localhost:80
 
 ## Git
 
-Develop on the session's working branch. **Testing branch: not chosen yet** — ask the user
-which branch they deploy for testing before pushing anywhere other than the working branch. Once
-chosen, record it here; after every commit, merge the working branch into it and push both.
+`testing` is the **testing branch** — it's what the user runs to try changes out. After every
+commit on a working branch, merge the working branch into `testing` and push it, in addition to
+pushing the working branch itself. When `testing` hasn't diverged this is just
+`git push origin <working-branch>:testing` (fast-forward); otherwise fetch it, merge the working
+branch into it locally, resolve, and push. Do not leave the testing branch behind after a commit.
