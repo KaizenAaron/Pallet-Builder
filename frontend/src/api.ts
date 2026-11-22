@@ -83,6 +83,47 @@ export async function api<T = unknown>(
   return data as T;
 }
 
+async function raiseFor(res: Response): Promise<never> {
+  let detail: unknown = null;
+  try {
+    detail = (await res.json())?.detail;
+  } catch {
+    /* not JSON */
+  }
+  const { message, code } = messageFrom(detail, `Request failed (${res.status})`);
+  throw new ApiError(res.status, message, code);
+}
+
+/** Multipart upload (file imports). */
+export async function apiUpload<T = unknown>(path: string, file: File): Promise<T> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const headers: Record<string, string> = {};
+  if (activeCompanyId != null) headers["X-Company-Id"] = String(activeCompanyId);
+  const res = await fetch(`/api${path}`, { method: "POST", body: fd, headers, credentials: "same-origin" });
+  if (!res.ok) await raiseFor(res);
+  return (await res.json()) as T;
+}
+
+/** Download a file from an endpoint that needs the company header (so a plain link won't do). */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (activeCompanyId != null) headers["X-Company-Id"] = String(activeCompanyId);
+  const res = await fetch(`/api${path}`, { headers, credentials: "same-origin" });
+  if (!res.ok) await raiseFor(res);
+  const blob = await res.blob();
+  const cd = res.headers.get("content-disposition") ?? "";
+  const name = /filename="([^"]+)"/.exec(cd)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // ---- shared types
 export type Role = "owner" | "admin" | "member";
 export interface CompanyRef {
@@ -101,4 +142,43 @@ export interface Me {
 export interface LinkResponse {
   message: string;
   dev_link: string | null;
+}
+
+export interface Box {
+  id?: number;
+  box_no: number;
+  name: string;
+  qty_per_unit: number;
+  units_per_box: number;
+  length: number;
+  width: number;
+  height: number;
+  weight: number;
+  this_side_up: boolean;
+  stackable: boolean;
+  max_load_on_top: number;
+}
+export interface ProductSummary {
+  id: number;
+  sku: string;
+  name: string;
+  source: "manual" | "import" | "odoo";
+  box_count: number;
+  unit_weight: number;
+  updated_at: string | null;
+}
+export interface Product extends ProductSummary {
+  boxes: Box[];
+}
+export interface PalletType {
+  id: number;
+  name: string;
+  length: number;
+  width: number;
+  deck_height: number;
+  tare_weight: number;
+  max_total_height: number;
+  max_gross_weight: number;
+  max_overhang: number;
+  is_default: boolean;
 }

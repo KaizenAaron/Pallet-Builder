@@ -42,3 +42,19 @@ def test_cannot_insert_rows_for_another_company():
                      "VALUES (:c, 'evil', 1, 1, 1, 1, 1, 1, 0, false, now())"),
                 {"c": b.company_id},
             )
+
+
+def test_every_tenant_table_is_isolated():
+    """Seed one row per company in every tenant table, then read each table unfiltered."""
+    from app.models import tenant_tables
+
+    a = signup_verified("alice@a.com", "Alpha Co")
+    b = signup_verified("bob@b.com", "Beta Co")
+    for s in (a, b):
+        s.post("/api/products", json={"sku": "P", "boxes": [
+            {"box_no": 1, "length": 1, "width": 1, "height": 1, "weight": 1}]})
+    with SessionLocal() as db:
+        bind_company(db, a.company_id)
+        for table in tenant_tables():
+            ids = set(db.execute(text(f'SELECT company_id FROM "{table}"')).scalars().all())
+            assert ids == {a.company_id}, table

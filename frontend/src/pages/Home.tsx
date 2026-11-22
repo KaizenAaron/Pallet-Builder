@@ -1,32 +1,30 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { api, type PalletType } from "../api";
 import { useAuth } from "../auth";
 import { Alert, Badge, Card } from "../components/ui";
 
-interface PalletType {
-  id: number;
-  name: string;
-  length: number;
-  width: number;
-  deck_height: number;
-  tare_weight: number;
-  max_total_height: number;
-  max_gross_weight: number;
-  max_overhang: number;
-  is_default: boolean;
+interface ProductStats {
+  total: number;
+  missing_boxes: number;
 }
 
 export default function HomePage() {
   const { me, company } = useAuth();
+  const [stats, setStats] = useState<ProductStats | null>(null);
   const [pallets, setPallets] = useState<PalletType[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isAdmin = company?.role === "owner" || company?.role === "admin";
 
   useEffect(() => {
     if (!company) return;
-    setPallets(null);
-    api<PalletType[]>("/pallet-types")
-      .then(setPallets)
+    setStats(null);
+    setError(null);
+    Promise.all([api<ProductStats>("/products?limit=1"), api<PalletType[]>("/pallet-types")])
+      .then(([s, p]) => {
+        setStats(s);
+        setPallets(p);
+      })
       .catch((e: Error) => setError(e.message));
   }, [company]);
 
@@ -41,6 +39,8 @@ export default function HomePage() {
     );
   }
 
+  const def = pallets?.find((p) => p.is_default);
+
   return (
     <>
       <div className="page-head">
@@ -53,54 +53,59 @@ export default function HomePage() {
           </p>
         </div>
       </div>
+      {error && <Alert kind="error">{error}</Alert>}
+      {stats && (
+        <div className="stats">
+          <Card>
+            <div className="stat">
+              <span className="stat-value">{stats.total.toLocaleString()}</span>
+              <span className="stat-label">
+                <Link to="/products">Products</Link>
+              </span>
+            </div>
+          </Card>
+          <Card>
+            <div className="stat">
+              <span className="stat-value" style={{ color: stats.missing_boxes ? "var(--warn)" : undefined }}>
+                {stats.missing_boxes.toLocaleString()}
+              </span>
+              <span className="stat-label">Missing box data</span>
+            </div>
+          </Card>
+          <Card>
+            <div className="stat">
+              <span className="stat-value">{pallets?.length ?? "—"}</span>
+              <span className="stat-label">
+                <Link to="/pallet-types">Pallet types</Link>
+                {def && ` · default ${def.name}`}
+              </span>
+            </div>
+          </Card>
+        </div>
+      )}
 
-      <Alert kind="info">
-        Shipments, the box index and the 3D pallet view arrive in the next phases. For now you can manage your company
-        and invite your team.
-      </Alert>
+      {stats && stats.total === 0 && (
+        <Card title="Get started">
+          <ol style={{ margin: 0, paddingLeft: 20, lineHeight: 1.9 }}>
+            <li>
+              {isAdmin ? (
+                <>
+                  <Link to="/products/import">Import your box index</Link> from the spreadsheet template, or{" "}
+                </>
+              ) : null}
+              <Link to="/products/new">add a product</Link> with its box sizes and weights.
+            </li>
+            <li>
+              Check your <Link to="/pallet-types">pallet types</Link> (a 48 × 40 is set up for you).
+            </li>
+            <li>
+              <Link to="/members">Invite your team.</Link>
+            </li>
+          </ol>
+        </Card>
+      )}
 
-      <Card title="Pallet types">
-        {error && <Alert kind="error">{error}</Alert>}
-        {!pallets ? (
-          !error && <p className="muted">Loading…</p>
-        ) : (
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th className="num">Footprint (in)</th>
-                  <th className="num">Deck (in)</th>
-                  <th className="num">Tare (lb)</th>
-                  <th className="num">Max height (in)</th>
-                  <th className="num">Max gross (lb)</th>
-                  <th className="num">Overhang (in)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pallets.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      {p.name} {p.is_default && <Badge>default</Badge>}
-                    </td>
-                    <td className="num">
-                      {p.length} × {p.width}
-                    </td>
-                    <td className="num">{p.deck_height}</td>
-                    <td className="num">{p.tare_weight}</td>
-                    <td className="num">{p.max_total_height}</td>
-                    <td className="num">{p.max_gross_weight.toLocaleString()}</td>
-                    <td className="num">{p.max_overhang}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}>
-          Editing pallet types comes with the box index (phase 4).
-        </p>
-      </Card>
+      <Alert kind="info">Shipments, pallet estimates and the 3D view arrive in the next phases.</Alert>
     </>
   );
 }

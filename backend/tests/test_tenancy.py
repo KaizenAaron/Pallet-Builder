@@ -8,7 +8,11 @@ import pytest
 
 from .conftest import invite_and_join, signup_verified
 
-TENANT_READS = ["/api/company", "/api/pallet-types", "/api/company/members", "/api/company/invites"]
+TENANT_READS = [
+    "/api/company", "/api/pallet-types", "/api/company/members", "/api/company/invites",
+    "/api/products", "/api/products/export.xlsx", "/api/products/import-template.xlsx",
+    "/api/products/import-template.csv",
+]
 
 
 @pytest.fixture
@@ -109,3 +113,26 @@ def test_suspended_company_is_locked_out(two_companies):
     assert a.get("/api/company").status_code == 200
     # ordinary users can't reach the platform admin API
     assert a.client.get("/api/admin/companies").status_code == 403
+
+
+def test_products_and_pallet_types_are_isolated(two_companies):
+    a, b = two_companies
+    bp = b.post("/api/products", json={"sku": "SECRET", "boxes": [
+        {"box_no": 1, "length": 1, "width": 1, "height": 1, "weight": 1}]}).json()
+    bpt = b.get("/api/pallet-types").json()[0]
+    # Alice in her own company can't see or touch Beta's rows by id
+    assert a.get(f"/api/products/{bp['id']}").status_code == 404
+    assert a.put(f"/api/products/{bp['id']}", json={"sku": "X"}).status_code == 404
+    assert a.delete(f"/api/products/{bp['id']}").status_code == 404
+    assert a.put(f"/api/pallet-types/{bpt['id']}", json={**{k: bpt[k] for k in (
+        "name", "length", "width", "deck_height", "tare_weight", "max_total_height", "max_gross_weight",
+        "max_overhang")}}).status_code == 404
+    assert a.delete(f"/api/pallet-types/{bpt['id']}").status_code == 404
+    assert a.post(f"/api/pallet-types/{bpt['id']}/default").status_code == 404
+    assert a.get("/api/products").json()["total"] == 0
+    # same SKU in Alice's company is fine and stays separate
+    assert a.post("/api/products", json={"sku": "SECRET"}).status_code == 200
+    assert b.get(f"/api/products/{bp['id']}").json()["box_count"] == 1
+    # imports write only into the caller's company
+    a.post("/api/products/import?dry_run=false", files={"file": ("x.csv", b"SKU,Product Name\nNEW,From A\n")})
+    assert [p["sku"] for p in b.get("/api/products").json()["items"]] == ["SECRET"]

@@ -35,7 +35,7 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
 | 1 | Scaffold: backend, frontend, docker compose, Alembic, CI | ✅ |
 | 2 | Packing engine: Layered + constraints + freight class, golden tests | ✅ |
 | 3 | Signup, companies, memberships, company switcher, invites, roles, row-level security | ✅ |
-| 4 | Products, box index, pallet types, spreadsheet import/template | ⏳ |
+| 4 | Products, box index, pallet types, spreadsheet import/template | ✅ |
 | 5 | Shipments: lines, compute, results | ⏳ |
 | 6 | 3D view | ⏳ |
 | 7 | Tightest fit | ✅ (engine) |
@@ -111,10 +111,21 @@ docker compose exec backend python cli.py create-platform-admin you@cernogroup.c
 Use the same email you signed up with to upgrade that account (the password is reset to the
 one you type), or a new email to create a separate admin login.
 
-**Step 8: Try it out.** Invite a teammate under **Members** (copy the invitation link and open
-it in a private/incognito window to play the invitee), create a second company from the company
-menu at the top right and switch between them. Shipments, the box index and the 3D view arrive
-in the next phases.
+**Step 8: Load your box index.** Go to **Products → Import spreadsheet**, click **Download
+Excel template**, and fill in the *Boxes* sheet — one row per box (a fixture that ships in two
+boxes gets two rows with the same SKU, Box # 1 and 2). The *Instructions* sheet explains every
+column with an example. Upload it: you'll see what will be added or updated, and any rows with
+problems, **before** anything is saved. Re-importing later updates matching boxes and adds new
+ones; an import never deletes. You can also add or edit products one at a time, and
+**Export** the whole box index back to Excel.
+
+**Step 9: Check your pallet types** under **Pallet types** — a 48 × 40 is set up for you. Add
+others (footprint, deck height, empty-pallet weight, max height, max weight, allowed overhang)
+and pick the default.
+
+**Step 10: Invite your team** under **Members** (copy the invitation link and open it in a
+private window to play the invitee). Create a second company from the company menu at the top
+right and switch between them. Shipments and the 3D view arrive in the next phases.
 
 **Everyday use:** open Docker Desktop, then:
 
@@ -192,7 +203,8 @@ It's idempotent; the Docker backend also runs it on every start.
 backend/
   app/
     engine/        # pure-Python packing engine (ported verbatim to Odoo in stage 2)
-    api/           # auth, companies, members, invites, platform admin
+    api/           # auth, companies, members, invites, products, pallet types, platform admin
+    services/box_import.py   # box-index template, xlsx/csv import (dry run + apply), export
     models.py      # users, companies, memberships, invites, auth tokens, tenant tables
     tenancy.py     # get_tenant: X-Company-Id + membership check (+ RLS binding)
     rls.py         # Postgres row-level security policies and session hooks

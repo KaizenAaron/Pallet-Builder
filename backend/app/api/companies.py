@@ -4,14 +4,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Company, PalletType, User
+from ..models import Company, User
 from ..security import current_user
 from ..services.accounts import create_company
-from ..tenancy import Tenant, get_tenant, require_role, scoped
+from ..tenancy import Tenant, get_tenant, require_role
 
 router = APIRouter(prefix="/api", tags=["companies"])
 
@@ -62,23 +61,3 @@ def update_company(body: CompanyUpdate, tenant: Tenant = Depends(require_role("a
         setattr(tenant.company, f, getattr(body, f).strip() if isinstance(getattr(body, f), str) else getattr(body, f))
     tenant.db.commit()
     return company_payload(tenant.company, tenant.role)
-
-
-@router.get("/pallet-types")
-def list_pallet_types(tenant: Tenant = Depends(get_tenant)) -> list[dict]:
-    rows = tenant.db.scalars(scoped(select(PalletType), PalletType, tenant).order_by(PalletType.name)).all()
-    return [
-        {
-            "id": p.id,
-            "name": p.name,
-            "length": p.length,
-            "width": p.width,
-            "deck_height": p.deck_height,
-            "tare_weight": p.tare_weight,
-            "max_total_height": p.max_total_height,
-            "max_gross_weight": p.max_gross_weight,
-            "max_overhang": p.max_overhang,
-            "is_default": p.is_default,
-        }
-        for p in rows
-    ]

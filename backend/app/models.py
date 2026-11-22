@@ -133,6 +133,47 @@ class PalletType(TenantMixin, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Product(TenantMixin, Base):
+    __tablename__ = "products"
+    __table_args__ = (UniqueConstraint("company_id", "sku", name="uq_product_company_sku"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sku: Mapped[str] = mapped_column(String(100))
+    name: Mapped[str] = mapped_column(String(300), default="")
+    source: Mapped[str] = mapped_column(String(20), default="manual")  # manual | import | odoo
+    external_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    boxes: Mapped[list["ProductBox"]] = relationship(
+        back_populates="product", cascade="all, delete-orphan", order_by="ProductBox.box_no"
+    )
+
+
+class ProductBox(TenantMixin, Base):
+    """One box of a product. A unit ships in `qty_per_unit` of each of its product's boxes;
+    `units_per_box` units share one box. Inches and pounds."""
+
+    __tablename__ = "product_boxes"
+    __table_args__ = (UniqueConstraint("product_id", "box_no", name="uq_product_box_no"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    box_no: Mapped[int] = mapped_column(Integer, default=1)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    qty_per_unit: Mapped[int] = mapped_column(Integer, default=1)
+    units_per_box: Mapped[int] = mapped_column(Integer, default=1)
+    length: Mapped[float] = mapped_column(Float)
+    width: Mapped[float] = mapped_column(Float)
+    height: Mapped[float] = mapped_column(Float)
+    weight: Mapped[float] = mapped_column(Float)
+    this_side_up: Mapped[bool] = mapped_column(Boolean, default=False)
+    stackable: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_load_on_top: Mapped[float] = mapped_column(Float, default=0.0)  # 0 = no limit
+
+    product: Mapped[Product] = relationship(back_populates="boxes")
+
+
 def tenant_tables() -> list[str]:
     return sorted(
         m.class_.__tablename__

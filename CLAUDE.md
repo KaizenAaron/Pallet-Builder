@@ -103,6 +103,15 @@ docker compose up --build                           # app at http://localhost:80
   models to create, so a revision that touches new tables must create them first
   (`Base.metadata.create_all(bind, checkfirst=True)`, as `0002` does). `tests/test_migrations.py`
   upgrades a phase-1-shaped database to head on Postgres — keep it passing.
+- **Box index** (`products`, `product_boxes`, both tenant tables): SKU is unique per company,
+  case-insensitively (checked in the API; the DB constraint is case-sensitive). The spreadsheet
+  import (`services/box_import.py`) matches products on SKU and boxes on (SKU, Box #), upserts,
+  and **never deletes** — files may be partial. `parse_rows` is pure; `apply_import` runs as a dry
+  run (rolled back) for the preview, then for real. Template headers are `box_import.HEADERS`;
+  header matching is alias-tolerant (e.g. "Internal Reference", "L"). Export uses the same columns,
+  so export → import round-trips (tested). Permissions: any member edits products/boxes; import and
+  pallet-type changes need admin. A company always keeps at least one pallet type and exactly one
+  default.
 - **Connectors** (phase 9): Odoo-specific logic lives only in `backend/app/connectors/`.
 - **Serving**: in dev, Vite proxies `/api`; in Docker, nginx (`frontend/nginx.conf`) serves the
   SPA and proxies `/api` to the backend (upload limit 100m for spreadsheet imports — keep it).

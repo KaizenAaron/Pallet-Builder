@@ -12,6 +12,10 @@ import {
 } from "./pages/AuthPages";
 import CompanySettingsPage from "./pages/CompanySettings";
 import HomePage from "./pages/Home";
+import ImportProductsPage from "./pages/ImportProducts";
+import PalletTypesPage from "./pages/PalletTypes";
+import ProductEditPage from "./pages/ProductEdit";
+import ProductsPage from "./pages/Products";
 import MembersPage from "./pages/Members";
 import NewCompanyPage from "./pages/NewCompany";
 import PlatformAdminPage from "./pages/PlatformAdmin";
@@ -40,6 +44,10 @@ export default function App() {
             }
           >
             <Route index element={<HomePage />} />
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/products/import" element={<ImportProductsPage />} />
+            <Route path="/products/:id" element={<ProductEditPage />} />
+            <Route path="/pallet-types" element={<PalletTypesPage />} />
             <Route path="/members" element={<MembersPage />} />
             <Route path="/company" element={<CompanySettingsPage />} />
             <Route path="/companies/new" element={<NewCompanyPage />} />

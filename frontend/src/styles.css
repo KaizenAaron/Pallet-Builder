@@ -110,3 +110,14 @@ table.table { width: 100%; border-collapse: collapse; }
 .mobile-nav a.active { color: var(--accent); background: var(--accent-soft); }
 .copy-box { display: flex; gap: 8px; }
 .copy-box .input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82rem; }
+
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 10px; }
+.table-edit td { padding: 6px 4px; }
+.table-edit .input { min-height: 34px; padding: 6px 8px; }
+.table-hover tbody tr:hover { background: var(--surface-2); }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-value { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat-label { color: var(--muted); font-size: 0.86rem; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.dropzone { border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px; text-align: center; background: var(--surface-2); }
+.dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
