@@ -39,6 +39,11 @@ class PalletState:
         self.loads: list[float] = []  # weight resting on each placement
         self.net_weight = 0.0
         self.points: list[tuple[float, float, float]] = [(0.0, 0.0, 0.0)]
+        # Box specs that found no position since the last placement. Identical boxes can't fit
+        # either until something changes, so first-fit skips this pallet for them (exact, just
+        # faster — results are identical to trying every point again).
+        self._no_fit: set = set()
+        self.used_volume = 0.0
 
     # ------------------------------------------------------------------ queries
     @property
@@ -124,14 +129,18 @@ class PalletState:
         for i, inc in increments.items():
             self.loads[i] += inc
         self.net_weight += box.spec.weight
+        self.used_volume += dx * dy * dz
+        self._no_fit.clear()
         self._update_points(p)
         return True
 
     def snapshot(self):
-        return (len(self.placements), list(self.loads), self.net_weight, list(self.points))
+        return (len(self.placements), list(self.loads), self.net_weight, list(self.points), self.used_volume)
 
     def restore(self, snap) -> None:
-        n, loads, weight, points = snap
+        n, loads, weight, points, used = snap
+        self.used_volume = used
+        self._no_fit.clear()
         del self.placements[n:]
         del self.supports[n:]
         self.loads = loads
@@ -192,11 +201,22 @@ class PalletState:
     def place_at_best_point(self, box: BoxInstance) -> bool:
         """Extreme-point placement: lowest, then back-most, then left-most point that accepts the
         box; at each point prefer the lowest orientation, then the largest footprint."""
+        if box.spec in self._no_fit:
+            return False
+        sp = box.spec
+        s = self.spec
+        # Exact quick rejections: too heavy for what's left, or more volume than is left.
+        if self.net_weight + sp.weight > s.max_load_weight + EPS:
+            return False
+        capacity = (s.length + 2 * s.max_overhang) * (s.width + 2 * s.max_overhang) * s.max_load_height
+        if self.used_volume + sp.length * sp.width * sp.height > capacity + EPS:
+            return False
         orients = sorted(box.spec.orientations(), key=lambda d: (d[2], -(d[0] * d[1]), -d[0]))
         for (x, y, z) in self.points:
             for (dx, dy, dz) in orients:
                 if self.try_place(box, x, y, z, dx, dy, dz):
                     return True
+        self._no_fit.add(box.spec)
         return False
 
     # ------------------------------------------------------------------ finishing

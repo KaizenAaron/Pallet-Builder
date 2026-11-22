@@ -64,7 +64,10 @@ class PasswordChange(BaseModel):
 def me_payload(user: User) -> dict:
     companies = sorted(
         (
-            {"id": m.company.id, "name": m.company.name, "role": m.role, "suspended": m.company.suspended_at is not None}
+            {
+                "id": m.company.id, "name": m.company.name, "role": m.role, "units": m.company.units,
+                "suspended": m.company.suspended_at is not None,
+            }
             for m in user.memberships
         ),
         key=lambda c: c["name"].lower(),

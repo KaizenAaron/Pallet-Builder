@@ -38,6 +38,7 @@ export default function Layout() {
 
   const links = [
     { to: "/", label: "Home", show: true, end: true },
+    { to: "/shipments", label: "Shipments", show: !!company },
     { to: "/products", label: "Products", show: !!company },
     { to: "/pallet-types", label: "Pallet types", show: !!company },
     { to: "/members", label: "Members", show: !!company },

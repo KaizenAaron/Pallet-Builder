@@ -8,9 +8,9 @@ protected by application checks and `tests/test_tenancy.py` instead of RLS.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column, relationship
 
 from .db import Base
@@ -172,6 +172,89 @@ class ProductBox(TenantMixin, Base):
     max_load_on_top: Mapped[float] = mapped_column(Float, default=0.0)  # 0 = no limit
 
     product: Mapped[Product] = relationship(back_populates="boxes")
+
+
+class Shipment(TenantMixin, Base):
+    """A pallet estimate. Results are a snapshot: `input_hash` fingerprints the inputs used
+    (lines, their products' boxes, the pallet type, the mode) so later edits show as
+    "out of date" instead of silently changing a quoted estimate."""
+
+    __tablename__ = "shipments"
+    __table_args__ = (UniqueConstraint("company_id", "number", name="uq_shipment_company_number"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    number: Mapped[int] = mapped_column(Integer)
+    customer: Mapped[str] = mapped_column(String(200), default="")
+    reference: Mapped[str] = mapped_column(String(100), default="")
+    ship_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    pallet_type_id: Mapped[int | None] = mapped_column(ForeignKey("pallet_types.id", ondelete="SET NULL"), nullable=True)
+    packing_mode: Mapped[str] = mapped_column(String(10), default="layered")
+
+    status: Mapped[str] = mapped_column(String(12), default="draft")  # draft | calculated
+    calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    calculated_mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    pallet_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_gross_weight: Mapped[float] = mapped_column(Float, default=0.0)
+    total_cubic_feet: Mapped[float] = mapped_column(Float, default=0.0)
+    warnings: Mapped[list] = mapped_column(JSON, default=list)
+    unplaced: Mapped[list] = mapped_column(JSON, default=list)
+    pallet_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    pallet_type: Mapped[PalletType | None] = relationship()
+    created_by: Mapped[User | None] = relationship()
+    lines: Mapped[list["ShipmentLine"]] = relationship(
+        back_populates="shipment", cascade="all, delete-orphan", order_by="ShipmentLine.position"
+    )
+    pallets: Mapped[list["ShipmentPallet"]] = relationship(
+        back_populates="shipment", cascade="all, delete-orphan", order_by="ShipmentPallet.index"
+    )
+
+    @property
+    def label(self) -> str:
+        return f"SH-{self.number:04d}"
+
+
+class ShipmentLine(TenantMixin, Base):
+    __tablename__ = "shipment_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    sku: Mapped[str] = mapped_column(String(100))  # snapshot, survives product deletion
+    product_name: Mapped[str] = mapped_column(String(300), default="")
+    quantity: Mapped[int] = mapped_column(Integer)
+
+    shipment: Mapped[Shipment] = relationship(back_populates="lines")
+    product: Mapped[Product | None] = relationship()
+
+
+class ShipmentPallet(TenantMixin, Base):
+    """One calculated pallet — every number here comes straight from the engine."""
+
+    __tablename__ = "shipment_pallets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    shipment_id: Mapped[int] = mapped_column(ForeignKey("shipments.id", ondelete="CASCADE"), index=True)
+    index: Mapped[int] = mapped_column(Integer)
+    length: Mapped[float] = mapped_column(Float)
+    width: Mapped[float] = mapped_column(Float)
+    height: Mapped[float] = mapped_column(Float)
+    net_weight: Mapped[float] = mapped_column(Float)
+    gross_weight: Mapped[float] = mapped_column(Float)
+    cubic_feet: Mapped[float] = mapped_column(Float)
+    density: Mapped[float] = mapped_column(Float)
+    freight_class: Mapped[str] = mapped_column(String(10))
+    box_summary: Mapped[list] = mapped_column(JSON, default=list)
+    layout: Mapped[list] = mapped_column(JSON, default=list)
+
+    shipment: Mapped[Shipment] = relationship(back_populates="pallets")
 
 
 def tenant_tables() -> list[str]:

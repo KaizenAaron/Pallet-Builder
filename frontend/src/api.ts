@@ -130,6 +130,7 @@ export interface CompanyRef {
   id: number;
   name: string;
   role: Role;
+  units: "imperial" | "metric";
   suspended: boolean;
 }
 export interface Me {
@@ -181,4 +182,85 @@ export interface PalletType {
   max_gross_weight: number;
   max_overhang: number;
   is_default: boolean;
+}
+
+export type PackingMode = "layered" | "tightest";
+export interface ShipmentSummary {
+  id: number;
+  number: string;
+  customer: string;
+  reference: string;
+  ship_date: string | null;
+  packing_mode: PackingMode;
+  status: "draft" | "calculated";
+  stale: boolean;
+  pallet_count: number;
+  total_gross_weight: number;
+  line_count: number;
+  updated_at: string | null;
+}
+export interface ShipmentLineOut {
+  id: number;
+  product_id: number | null;
+  sku: string;
+  product_name: string;
+  quantity: number;
+  product_deleted: boolean;
+  box_count: number;
+}
+export interface Placement {
+  uid: number;
+  product_id: string;
+  sku: string;
+  product_name: string;
+  box_no: number;
+  box_name: string;
+  x: number;
+  y: number;
+  z: number;
+  dx: number;
+  dy: number;
+  dz: number;
+  weight: number;
+}
+export interface BoxSummaryRow {
+  product_id: string;
+  sku: string;
+  product_name: string;
+  box_no: number;
+  box_name: string;
+  dims: [number, number, number];
+  unit_weight: number;
+  count: number;
+  weight: number;
+}
+export interface PalletResult {
+  index: number;
+  length: number;
+  width: number;
+  height: number;
+  net_weight: number;
+  gross_weight: number;
+  cubic_feet: number;
+  density: number;
+  freight_class: string;
+  box_summary: BoxSummaryRow[];
+  layout: Placement[];
+}
+export interface ShipmentDetail extends ShipmentSummary {
+  notes: string;
+  pallet_type_id: number | null;
+  calculated_at: string | null;
+  calculated_mode: PackingMode | null;
+  created_by: string | null;
+  lines: ShipmentLineOut[];
+  results: null | {
+    pallet_count: number;
+    total_gross_weight: number;
+    total_cubic_feet: number;
+    warnings: string[];
+    unplaced: { sku: string; box_no: number; box_name: string }[];
+    pallet_spec: (Record<string, number> & { name: string }) | null;
+    pallets: PalletResult[];
+  };
 }

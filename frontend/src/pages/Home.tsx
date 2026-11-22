@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type PalletType } from "../api";
+import { api, type PalletType, type ShipmentSummary } from "../api";
+import { ShipmentTable } from "./Shipments";
 import { useAuth } from "../auth";
 import { Alert, Badge, Card } from "../components/ui";
 
@@ -13,6 +14,7 @@ export default function HomePage() {
   const { me, company } = useAuth();
   const [stats, setStats] = useState<ProductStats | null>(null);
   const [pallets, setPallets] = useState<PalletType[] | null>(null);
+  const [recent, setRecent] = useState<ShipmentSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const isAdmin = company?.role === "owner" || company?.role === "admin";
 
@@ -20,10 +22,15 @@ export default function HomePage() {
     if (!company) return;
     setStats(null);
     setError(null);
-    Promise.all([api<ProductStats>("/products?limit=1"), api<PalletType[]>("/pallet-types")])
-      .then(([s, p]) => {
+    Promise.all([
+      api<ProductStats>("/products?limit=1"),
+      api<PalletType[]>("/pallet-types"),
+      api<ShipmentSummary[]>("/shipments?limit=8"),
+    ])
+      .then(([s, p, r]) => {
         setStats(s);
         setPallets(p);
+        setRecent(r);
       })
       .catch((e: Error) => setError(e.message));
   }, [company]);
@@ -52,6 +59,10 @@ export default function HomePage() {
             Welcome, {me?.name || me?.email}.
           </p>
         </div>
+        <span className="spacer" />
+        <Link className="btn btn-primary" to="/shipments/new">
+          + New shipment
+        </Link>
       </div>
       {error && <Alert kind="error">{error}</Alert>}
       {stats && (
@@ -99,13 +110,20 @@ export default function HomePage() {
               Check your <Link to="/pallet-types">pallet types</Link> (a 48 × 40 is set up for you).
             </li>
             <li>
+              <Link to="/shipments/new">Create a shipment</Link>, add products and quantities, and press Calculate.
+            </li>
+            <li>
               <Link to="/members">Invite your team.</Link>
             </li>
           </ol>
         </Card>
       )}
 
-      <Alert kind="info">Shipments, pallet estimates and the 3D view arrive in the next phases.</Alert>
+      {recent && recent.length > 0 && (
+        <Card title="Recent shipments" actions={<Link to="/shipments">All shipments →</Link>}>
+          <ShipmentTable rows={recent} />
+        </Card>
+      )}
     </>
   );
 }

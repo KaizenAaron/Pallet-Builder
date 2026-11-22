@@ -11,7 +11,7 @@ from .conftest import invite_and_join, signup_verified
 TENANT_READS = [
     "/api/company", "/api/pallet-types", "/api/company/members", "/api/company/invites",
     "/api/products", "/api/products/export.xlsx", "/api/products/import-template.xlsx",
-    "/api/products/import-template.csv",
+    "/api/products/import-template.csv", "/api/shipments",
 ]
 
 
@@ -136,3 +136,27 @@ def test_products_and_pallet_types_are_isolated(two_companies):
     # imports write only into the caller's company
     a.post("/api/products/import?dry_run=false", files={"file": ("x.csv", b"SKU,Product Name\nNEW,From A\n")})
     assert [p["sku"] for p in b.get("/api/products").json()["items"]] == ["SECRET"]
+
+
+def test_shipments_are_isolated(two_companies):
+    a, b = two_companies
+    bp = b.post("/api/products", json={"sku": "SECRET", "boxes": [
+        {"box_no": 1, "length": 10, "width": 10, "height": 10, "weight": 5}]}).json()
+    bs = b.post("/api/shipments", json={"customer": "Beta's customer",
+                                        "lines": [{"product_id": bp["id"], "quantity": 2}]}).json()
+    b.post(f"/api/shipments/{bs['id']}/calculate")
+    sid = bs["id"]
+    assert a.get(f"/api/shipments/{sid}").status_code == 404
+    assert a.put(f"/api/shipments/{sid}", json={"lines": []}).status_code == 404
+    assert a.post(f"/api/shipments/{sid}/calculate").status_code == 404
+    assert a.post(f"/api/shipments/{sid}/duplicate").status_code == 404
+    assert a.delete(f"/api/shipments/{sid}").status_code == 404
+    assert a.get(f"/api/shipments/{sid}", company_id=b.company_id).status_code == 403
+    assert a.get("/api/shipments").json() == []
+    # Alice can't put Beta's product on her own shipment
+    r = a.post("/api/shipments", json={"lines": [{"product_id": bp["id"], "quantity": 1}]})
+    assert r.status_code == 422
+    # parse-lines only resolves Alice's own SKUs
+    out = a.post("/api/shipments/parse-lines", files={"file": ("o.csv", b"SKU,Qty\nSECRET,1\n")}).json()
+    assert out["lines"] == [] and out["unknown_skus"] == ["SECRET"]
+    assert b.get(f"/api/shipments/{sid}").json()["results"]["pallet_count"] == 1

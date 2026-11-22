@@ -16,6 +16,8 @@ import ImportProductsPage from "./pages/ImportProducts";
 import PalletTypesPage from "./pages/PalletTypes";
 import ProductEditPage from "./pages/ProductEdit";
 import ProductsPage from "./pages/Products";
+import ShipmentEditPage from "./pages/ShipmentEdit";
+import ShipmentsPage from "./pages/Shipments";
 import MembersPage from "./pages/Members";
 import NewCompanyPage from "./pages/NewCompany";
 import PlatformAdminPage from "./pages/PlatformAdmin";
@@ -44,6 +46,8 @@ export default function App() {
             }
           >
             <Route index element={<HomePage />} />
+            <Route path="/shipments" element={<ShipmentsPage />} />
+            <Route path="/shipments/:id" element={<ShipmentEditPage />} />
             <Route path="/products" element={<ProductsPage />} />
             <Route path="/products/import" element={<ImportProductsPage />} />
             <Route path="/products/:id" element={<ProductEditPage />} />

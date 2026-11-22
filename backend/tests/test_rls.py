@@ -50,11 +50,13 @@ def test_every_tenant_table_is_isolated():
 
     a = signup_verified("alice@a.com", "Alpha Co")
     b = signup_verified("bob@b.com", "Beta Co")
-    for s in (a, b):
-        s.post("/api/products", json={"sku": "P", "boxes": [
-            {"box_no": 1, "length": 1, "width": 1, "height": 1, "weight": 1}]})
+    for s in (a, b):  # put at least one row in every tenant table, for both companies
+        p = s.post("/api/products", json={"sku": "P", "boxes": [
+            {"box_no": 1, "length": 1, "width": 1, "height": 1, "weight": 1}]}).json()
+        sh = s.post("/api/shipments", json={"lines": [{"product_id": p["id"], "quantity": 1}]}).json()
+        assert s.post(f"/api/shipments/{sh['id']}/calculate").status_code == 200
     with SessionLocal() as db:
         bind_company(db, a.company_id)
         for table in tenant_tables():
             ids = set(db.execute(text(f'SELECT company_id FROM "{table}"')).scalars().all())
-            assert ids == {a.company_id}, table
+            assert ids == {a.company_id}, f"{table}: seed it above if this is a new tenant table"

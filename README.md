@@ -36,7 +36,7 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
 | 2 | Packing engine: Layered + constraints + freight class, golden tests | ✅ |
 | 3 | Signup, companies, memberships, company switcher, invites, roles, row-level security | ✅ |
 | 4 | Products, box index, pallet types, spreadsheet import/template | ✅ |
-| 5 | Shipments: lines, compute, results | ⏳ |
+| 5 | Shipments: lines, calculate, results | ✅ |
 | 6 | 3D view | ⏳ |
 | 7 | Tightest fit | ✅ (engine) |
 | 8 | PDF report + share link | ⏳ |
@@ -123,9 +123,19 @@ ones; an import never deletes. You can also add or edit products one at a time, 
 others (footprint, deck height, empty-pallet weight, max height, max weight, allowed overhang)
 and pick the default.
 
-**Step 10: Invite your team** under **Members** (copy the invitation link and open it in a
+**Step 10: Estimate a shipment.** Go to **Shipments → New shipment**, fill in the customer,
+reference (SO / quote #) and ship date, then add products by typing a SKU or name and setting
+quantities — or **Add from file** with a spreadsheet that has SKU and Qty columns. Pick the
+pallet type and **Layered** or **Tightest fit**, and press **Calculate**. You get the number of
+pallets and, for each one, L × W × H, gross weight (boxes + pallet), density, a suggested
+freight class and the list of boxes on it. Switching the packing mode recalculates straight away.
+
+Saved estimates never change on their own: if someone later edits a product's boxes or the
+pallet type, the shipment is marked **Out of date** until you press **Recalculate**.
+
+**Step 11: Invite your team** under **Members** (copy the invitation link and open it in a
 private window to play the invitee). Create a second company from the company menu at the top
-right and switch between them. Shipments and the 3D view arrive in the next phases.
+right and switch between them. The 3D view arrives in the next phase.
 
 **Everyday use:** open Docker Desktop, then:
 
@@ -205,6 +215,7 @@ backend/
     engine/        # pure-Python packing engine (ported verbatim to Odoo in stage 2)
     api/           # auth, companies, members, invites, products, pallet types, platform admin
     services/box_import.py   # box-index template, xlsx/csv import (dry run + apply), export
+    services/shipments.py    # the only bridge to the engine: inputs, fingerprint, calculate
     models.py      # users, companies, memberships, invites, auth tokens, tenant tables
     tenancy.py     # get_tenant: X-Company-Id + membership check (+ RLS binding)
     rls.py         # Postgres row-level security policies and session hooks

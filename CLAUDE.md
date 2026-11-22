@@ -112,6 +112,23 @@ docker compose up --build                           # app at http://localhost:80
   so export → import round-trips (tested). Permissions: any member edits products/boxes; import and
   pallet-type changes need admin. A company always keeps at least one pallet type and exactly one
   default.
+- **Shipments** (`shipments`, `shipment_lines`, `shipment_pallets`): `services/shipments.py` is the
+  only code that calls the engine. Results are a **snapshot**: `calculate()` stores the engine's
+  pallets (incl. `layout` placements for the 3D view/PDF) plus `input_hash`, a SHA-256 of
+  everything the engine saw (lines, each product's boxes at that moment, the pallet spec, the
+  mode). `is_stale()` recomputes it on read; any later edit shows "Out of date" instead of
+  silently changing a quoted estimate. Lines keep `sku`/`product_name` and the shipment keeps
+  `pallet_spec` so deleting a product or pallet type never breaks old shipments (FKs are
+  `SET NULL`; SQLite gets `PRAGMA foreign_keys=ON` in `db.py` so it behaves like Postgres).
+  **Size guard** (`LIMITS` in `services/shipments.py`): boxes and boxes × distinct box types are
+  capped per mode (tightest is ~5–10× slower) so a request can't tie up the server — numbers come
+  from timing the engine; re-measure before raising them.
+- **Engine performance**: `PalletState` caches box specs that found no position since the last
+  placement (`_no_fit`) and rejects boxes that can't fit by remaining weight/volume. Both are
+  exact (results identical, golden tests unchanged) and took 4,000-box tightest runs from ~100 s
+  to ~4 s. The worst case is many *distinct* box sizes, which the cache can't help.
+- **Units display**: the API is always in/lb; `frontend/src/units.ts` (`useFormat`) converts for
+  display when the company's units are metric. Display only — never feed converted values back.
 - **Connectors** (phase 9): Odoo-specific logic lives only in `backend/app/connectors/`.
 - **Serving**: in dev, Vite proxies `/api`; in Docker, nginx (`frontend/nginx.conf`) serves the
   SPA and proxies `/api` to the backend (upload limit 100m for spreadsheet imports — keep it).

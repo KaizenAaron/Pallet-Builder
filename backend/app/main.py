@@ -2,14 +2,14 @@ from fastapi import FastAPI
 
 from . import models  # noqa: F401  (register tables)
 from . import rls  # noqa: F401  (register session hooks)
-from .api import admin, auth, companies, invites, members, pallet_types, products
+from .api import admin, auth, companies, invites, members, pallet_types, products, shipments
 from .db import Base, engine
 
 app = FastAPI(title="Pallet Builder", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 for r in (
     auth.router, companies.router, members.router, invites.router, admin.router,
-    pallet_types.router, products.router,
+    pallet_types.router, products.router, shipments.router,
 ):
     app.include_router(r)
 
