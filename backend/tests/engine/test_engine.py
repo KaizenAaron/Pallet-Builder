@@ -1,0 +1,197 @@
+"""Engine golden tests.
+
+The expected numbers here are hand-checked (see each docstring). They are pinned the same way the
+Crystal parity tests are in Sales-Rep-Activity: if a change breaks them, the change is wrong
+unless the new numbers are explicitly signed off. Every result also goes through the independent
+validator, for both packing modes.
+"""
+
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from app.engine import MODES, BoxSpec, PalletSpec, ShipmentLine, pack, validate
+
+PALLET = PalletSpec()  # 48×40, 5.5" deck, 45 lb tare, 72" max height, 2,500 lb max, no overhang
+
+
+def box(sku="A", no=1, l=12, w=10, h=10, wt=10.0, **kw) -> BoxSpec:
+    return BoxSpec(
+        product_id=sku, sku=sku, product_name=f"Product {sku}", box_no=no, name=f"{sku} box {no}",
+        length=l, width=w, height=h, weight=wt, **kw,
+    )
+
+
+def line(spec_list, qty, sku=None) -> ShipmentLine:
+    s = sku or spec_list[0].sku
+    return ShipmentLine(product_id=s, sku=s, product_name=f"Product {s}", quantity=qty, boxes=spec_list)
+
+
+def run(lines, mode="layered", pallet=PALLET):
+    res = pack(lines, pallet, mode)
+    for p in res.pallets:
+        errors = validate(pallet, p.placements)
+        assert errors == [], f"{mode} pallet {p.index}: {errors[:5]}"
+    return res
+
+
+def counts(res):
+    return [len(p.placements) for p in res.pallets]
+
+
+# ---------------------------------------------------------------- golden: layered
+
+
+def test_single_sku_full_layers():
+    """12×10×10 @10 lb: 16 per layer on 48×40, 6 layers fit 66.5" → 96 per pallet.
+    100 boxes → 96 + 4. Pallet 1: 60" load + 5.5 deck = 65.5", 960 + 45 = 1005 lb."""
+    res = run([line([box()], 100)])
+    assert counts(res) == [96, 4]
+    p1, p2 = res.pallets
+    assert (p1.length, p1.width, p1.height, p1.gross_weight) == (48, 40, 65.5, 1005)
+    assert (p2.height, p2.gross_weight) == (15.5, 85)
+
+
+def test_multi_box_product():
+    """One unit = box 1 (48×20×10, 50 lb) + box 2 (24×20×8, 20 lb). 4 units → 4 + 4 boxes.
+    Heavier box 1 first: 2 per layer × 2 layers = 20"; box 2: 4 per layer, 1 layer = 8".
+    Height 28 + 5.5 = 33.5"; gross 4×50 + 4×20 + 45 = 325 lb."""
+    specs = [box("FIX", 1, 48, 20, 10, 50.0), box("FIX", 2, 24, 20, 8, 20.0)]
+    res = run([line(specs, 4)])
+    assert counts(res) == [8]
+    p = res.pallets[0]
+    assert (p.height, p.gross_weight) == (33.5, 325)
+    assert {(r["box_no"], r["count"]) for r in p.box_summary} == {(1, 4), (2, 4)}
+
+
+def test_weight_limit_starts_new_pallet():
+    """20×20×10 @300 lb: (2500 − 45) / 300 = 8 boxes per pallet → 10 boxes = 8 + 2."""
+    res = run([line([box(l=20, w=20, h=10, wt=300.0)], 10)])
+    assert counts(res) == [8, 2]
+    assert res.pallets[0].gross_weight == 8 * 300 + 45
+
+
+def test_height_limit_starts_new_pallet():
+    """24×20×20 @10 lb this-side-up: 4 per layer, 3 layers (60") fit 66.5". 16 boxes → 12 + 4."""
+    res = run([line([box(l=24, w=20, h=20, this_side_up=True)], 16)])
+    assert counts(res) == [12, 4]
+    assert [p.height for p in res.pallets] == [65.5, 25.5]
+
+
+def test_this_side_up_stays_upright():
+    """10×10×30 this-side-up: 16 per layer standing, 2 layers = 60". 20 boxes → one pallet,
+    the 4 leftovers on top of the first layer. Every box keeps dz = 30."""
+    res = run([line([box(l=10, w=10, h=30, this_side_up=True)], 20)])
+    assert counts(res) == [20]
+    assert all(p.dz == 30 for p in res.pallets[0].placements)
+    assert res.pallets[0].height == 65.5
+
+
+def test_non_stackable_single_layer():
+    """24×20×20 not stackable: one layer of 4 per pallet → 6 boxes = 4 + 2, 25.5" tall."""
+    res = run([line([box(l=24, w=20, h=20, stackable=False, this_side_up=True)], 6)])
+    assert counts(res) == [4, 2]
+    assert all(p.height == 25.5 for p in res.pallets)
+
+
+def test_max_load_on_top_limits_column_height():
+    """24×20×10 @50 lb, max 100 lb on top: columns of 3 (bottom box carries 2×50 = 100).
+    16 boxes → 3 layers (12) + 1 layer (4)."""
+    res = run([line([box(l=24, w=20, h=10, wt=50.0, max_load_on_top=100.0, this_side_up=True)], 16)])
+    assert counts(res) == [12, 4]
+
+
+def test_overhang_allows_wider_layer():
+    """26×21 boxes: no overhang → 1×1 per layer is all a 48×40 deck takes? No: 48/26 = 1, 40/21 = 1
+    → 1 per layer (two-block can't fit either). With 2" overhang per side the area is 52×44 → 2×2."""
+    spec = box(l=26, w=21, h=10, this_side_up=True)
+    tight = run([line([spec], 4)])
+    loose_pallet = PalletSpec(max_overhang=2.0)
+    loose = run([line([spec], 4)], pallet=loose_pallet)
+    assert loose.pallets[0].placements and max(p.z for p in loose.pallets[0].placements) == 0
+    assert loose.pallets[0].length == 52 and loose.pallets[0].width == 42
+    assert max(p.z for p in tight.pallets[0].placements) > 0  # had to stack without overhang
+
+
+# ---------------------------------------------------------------- warnings / edge cases
+
+
+def test_product_without_boxes_is_warned_not_fatal():
+    res = run([line([box()], 2), ShipmentLine("B", "B", "Product B", 3, [])])
+    assert counts(res) == [2]
+    assert any("B: no box data" in w for w in res.warnings)
+
+
+def test_box_too_big_is_reported_unplaced():
+    res = run([line([box(l=100, w=100, h=100)], 1)])
+    assert res.pallets == []
+    assert len(res.unplaced) == 1
+    assert any("cannot fit" in w for w in res.warnings)
+
+
+def test_units_per_box_and_zero_qty():
+    """12 units at 5 units/box → 3 boxes; zero-quantity lines are ignored."""
+    res = run([line([box(units_per_box=5)], 12), line([box("Z")], 0)])
+    assert counts(res) == [3]
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_deterministic(mode):
+    lines = mixed_load()
+    a = pack(lines, PALLET, mode).to_dict()
+    b = pack(lines, PALLET, mode).to_dict()
+    assert a == b
+
+
+def test_freight_class_and_density():
+    """Pallet 1 of the single-SKU case: 48×40×65.5 = 72.78 ft³, 1005 lb → 13.81 pcf → class 85."""
+    p = run([line([box()], 100)]).pallets[0]
+    assert p.cubic_feet == 72.78
+    assert p.density == 13.81
+    assert p.freight_class == "85"
+
+
+# ---------------------------------------------------------------- tightest fit
+
+
+def mixed_load():
+    return [
+        line([box("A", 1, 30, 20, 16, 40.0)], 14),
+        line([box("B", 1, 18, 14, 12, 15.0), box("B", 2, 18, 14, 6, 6.0)], 11),
+        line([box("C", 1, 22, 17, 9, 12.0, this_side_up=True)], 9),
+        line([box("D", 1, 40, 12, 8, 25.0, stackable=False)], 3),
+    ]
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_mixed_load_valid(mode):
+    res = run(mixed_load(), mode)
+    assert res.unplaced == []
+    assert sum(counts(res)) == 14 + 22 + 9 + 3
+
+
+def test_tightest_never_uses_more_pallets_than_layered_on_mixed_load():
+    layered = run(mixed_load(), "layered")
+    tightest = run(mixed_load(), "tightest")
+    assert tightest.pallet_count <= layered.pallet_count
+
+
+def test_tightest_single_sku_matches_layered():
+    res = run([line([box()], 100)], "tightest")
+    assert counts(res) == [96, 4]
+
+
+def test_tightest_never_worse_than_layered_on_large_order():
+    lines = [line([box(f"S{i}", 1, 12 + i, 10 + i % 3, 8 + i % 4, 8.0 + i)], 40) for i in range(8)]
+    assert run(lines, "tightest").pallet_count <= run(lines, "layered").pallet_count
+
+
+def test_large_order_is_fast():
+    lines = [line([box(f"S{i}", 1, 12 + i, 10 + i % 3, 8 + i % 4, 8.0 + i)], 40) for i in range(8)]
+    for mode in MODES:
+        t = time.perf_counter()
+        res = run(lines, mode)
+        assert sum(counts(res)) == 320
+        assert time.perf_counter() - t < 20, mode
