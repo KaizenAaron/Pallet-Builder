@@ -37,7 +37,7 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
 | 3 | Signup, companies, memberships, company switcher, invites, roles, row-level security | ✅ |
 | 4 | Products, box index, pallet types, spreadsheet import/template | ✅ |
 | 5 | Shipments: lines, calculate, results | ✅ |
-| 6 | 3D view | ⏳ |
+| 6 | 3D view | ✅ |
 | 7 | Tightest fit | ✅ (engine) |
 | 8 | PDF report + share link | ⏳ |
 | 9 | Odoo connector (products, sales orders, opportunities) | ⏳ |
@@ -129,6 +129,13 @@ quantities — or **Add from file** with a spreadsheet that has SKU and Qty colu
 pallet type and **Layered** or **Tightest fit**, and press **Calculate**. You get the number of
 pallets and, for each one, L × W × H, gross weight (boxes + pallet), density, a suggested
 freight class and the list of boxes on it. Switching the packing mode recalculates straight away.
+
+Below the totals is the **3D view**: a tab per pallet, drag to turn it (pinch/scroll to zoom),
+and buttons for **3D / Front / Side / Top** views plus a **Dimensions** toggle. The **build
+steps** slider and ◀ Layer / Layer ▶ buttons show the pallet being stacked, box by box or layer
+by layer — handy for the dock crew. Hover a box for its SKU, size and weight; click a product in
+the legend (or a row in a pallet's box list) to highlight just that product. Each pallet card
+also shows a still picture; click it to open that pallet in the viewer.
 
 Saved estimates never change on their own: if someone later edits a product's boxes or the
 pallet type, the shipment is marked **Out of date** until you press **Recalculate**.
@@ -224,6 +231,6 @@ backend/
   alembic/         # migrations
   tests/           # engine golden tests, auth, invites, tenant isolation, RLS (Postgres)
 frontend/
-  src/scene/       # framework-agnostic three.js scene (phase 6)
+  src/scene/       # framework-agnostic three.js scene: layout helpers, PalletScene, thumbnails
 docker-compose.yml
 ```

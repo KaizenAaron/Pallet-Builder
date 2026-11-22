@@ -26,6 +26,7 @@ DATABASE_URL=sqlite:///./dev.db .venv/bin/alembic upgrade head
 npm install
 npm run dev        # http://localhost:5173, proxies /api to localhost:8000
 npm run build      # tsc -b && vite build — run this to type-check
+npm test           # vitest (scene helpers)
 
 # Full stack
 docker compose up --build                           # app at http://localhost:8081
@@ -129,6 +130,15 @@ docker compose up --build                           # app at http://localhost:80
   to ~4 s. The worst case is many *distinct* box sizes, which the cache can't help.
 - **Units display**: the API is always in/lb; `frontend/src/units.ts` (`useFormat`) converts for
   display when the company's units are metric. Display only — never feed converted values back.
+- **3D view** (`frontend/src/scene/`, no React): `layout.ts` holds pure helpers (colors, build
+  order, layers, bounds, legend; vitest in `layout.test.ts`), `PalletScene.ts` draws one pallet
+  from the engine's saved `layout` (engine x→three x, engine y→three z, engine z→up; it never
+  computes positions), `thumbnails.ts` renders all card thumbnails with one hidden scene/WebGL
+  context. Frames render **on demand** (controls/state/resize) — don't add an animation loop.
+  `components/PalletViewer.tsx` is the React wrapper and is **lazy-loaded** so three.js (~130 kB
+  gzipped) only downloads on shipment pages. **Colors**: `colorMap()` assigns `PALETTE` in the
+  saved shipment's line order (key = product id as a string, or `deleted:<sku>`); later boxes of a
+  multi-box product are tints. The PDF report must use the same palette and rule.
 - **Connectors** (phase 9): Odoo-specific logic lives only in `backend/app/connectors/`.
 - **Serving**: in dev, Vite proxies `/api`; in Docker, nginx (`frontend/nginx.conf`) serves the
   SPA and proxies `/api` to the backend (upload limit 100m for spreadsheet imports — keep it).

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
@@ -13,6 +13,9 @@ import ProductPicker from "../components/ProductPicker";
 import { Alert, Badge, Button, Card, Field, Input, Select, useAsync } from "../components/ui";
 import { useFormat } from "../units";
 import { StatusBadge } from "./Shipments";
+import { colorMap, type ColorMap } from "../scene/layout";
+
+const PalletViewer = lazy(() => import("../components/PalletViewer"));
 
 interface LineDraft {
   key: number;
@@ -46,6 +49,10 @@ export default function ShipmentEditPage() {
   const [lines, setLines] = useState<LineDraft[]>([]);
   const [palletTypes, setPalletTypes] = useState<PalletType[]>([]);
   const [dirty, setDirty] = useState(false);
+  const [selectedPallet, setSelectedPallet] = useState(1);
+  const [highlight, setHighlight] = useState<string | null>(null);
+  const [thumbs, setThumbs] = useState<string[]>([]);
+  const viewerRef = useRef<HTMLDivElement>(null);
   const [fileNote, setFileNote] = useState<{ unknown: string[]; errors: { row: number; message: string }[] } | null>(null);
   const { busy, error, setError, run } = useAsync();
 
@@ -168,6 +175,25 @@ export default function ShipmentEditPage() {
   const results = shipment?.results ?? null;
   const showStale = !!shipment && shipment.status === "calculated" && (shipment.stale || dirty);
   const ptName = useMemo(() => palletTypes.find((p) => p.id === header.pallet_type_id)?.name, [palletTypes, header.pallet_type_id]);
+  // Product colors follow the saved shipment's line order (same rule as the PDF report).
+  const colors: ColorMap = useMemo(
+    () => colorMap((shipment?.lines ?? []).map((l) => (l.product_id != null ? String(l.product_id) : `deleted:${l.sku}`))),
+    [shipment],
+  );
+  const deck = useMemo(() => {
+    const ps = shipment?.results?.pallet_spec;
+    return { length: ps?.length ?? 48, width: ps?.width ?? 40, deck_height: ps?.deck_height ?? 5.5 };
+  }, [shipment]);
+  const cacheKey = `${shipment?.id}|${shipment?.calculated_at}`;
+  useEffect(() => {
+    setSelectedPallet(1);
+    setHighlight(null);
+    setThumbs([]);
+  }, [cacheKey]);
+  function openPallet(index: number) {
+    setSelectedPallet(index);
+    viewerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   if (!isNew && !shipment) return error ? <Alert kind="error">{error}</Alert> : <p className="muted">Loading…</p>;
 
@@ -436,9 +462,40 @@ export default function ShipmentEditPage() {
               ))}
             </Alert>
           )}
+          {results.pallets.length > 0 && (
+            <div ref={viewerRef} style={{ scrollMarginTop: 72, marginBottom: 16 }}>
+              <Suspense fallback={<div className="card muted">Loading 3D view…</div>}>
+                <PalletViewer
+                  cacheKey={cacheKey}
+                  pallets={results.pallets}
+                  deck={deck}
+                  colors={colors}
+                  selected={selectedPallet}
+                  onSelect={setSelectedPallet}
+                  highlight={highlight}
+                  onHighlight={setHighlight}
+                  onThumbnails={setThumbs}
+                  stale={showStale}
+                />
+              </Suspense>
+            </div>
+          )}
           <div className="pallet-grid">
-            {results.pallets.map((p) => (
-              <PalletCard key={p.index} p={p} count={results.pallet_count} />
+            {results.pallets.map((p, i) => (
+              <PalletCard
+                key={p.index}
+                p={p}
+                count={results.pallet_count}
+                thumb={thumbs[i]}
+                colors={colors}
+                selected={p.index === selectedPallet}
+                highlight={highlight}
+                onOpen={() => openPallet(p.index)}
+                onHighlight={(pid) => {
+                  setSelectedPallet(p.index);
+                  setHighlight(highlight === pid ? null : pid);
+                }}
+              />
             ))}
           </div>
         </>
@@ -447,11 +504,29 @@ export default function ShipmentEditPage() {
   );
 }
 
-function PalletCard({ p, count }: { p: PalletResult; count: number }) {
+function PalletCard({
+  p,
+  count,
+  thumb,
+  colors,
+  selected,
+  highlight,
+  onOpen,
+  onHighlight,
+}: {
+  p: PalletResult;
+  count: number;
+  thumb?: string;
+  colors: ColorMap;
+  selected: boolean;
+  highlight: string | null;
+  onOpen: () => void;
+  onHighlight: (productId: string) => void;
+}) {
   const f = useFormat();
   const boxes = p.box_summary.reduce((s, b) => s + b.count, 0);
   return (
-    <section className="pallet-card">
+    <section className={`pallet-card ${selected ? "selected" : ""}`}>
       <div className="row" style={{ marginBottom: 10 }}>
         <h2 style={{ margin: 0 }}>
           Pallet {p.index} <span className="muted small">of {count}</span>
@@ -459,7 +534,9 @@ function PalletCard({ p, count }: { p: PalletResult; count: number }) {
         <span className="spacer" />
         <Badge>{boxes} boxes</Badge>
       </div>
-      <div className="placeholder-3d">3D view arrives in the next update</div>
+      <button className="pallet-thumb" onClick={onOpen} aria-label={`Open pallet ${p.index} in the 3D view`}>
+        {thumb ? <img src={thumb} alt={`Pallet ${p.index}`} /> : <span className="muted small">3D preview…</span>}
+      </button>
       <dl className="kv">
         <dt>L × W × H</dt>
         <dd>{f.dims(p.length, p.width, p.height)}</dd>
@@ -488,8 +565,15 @@ function PalletCard({ p, count }: { p: PalletResult; count: number }) {
           </thead>
           <tbody>
             {p.box_summary.map((b) => (
-              <tr key={`${b.product_id}-${b.box_no}`}>
-                <td>{b.sku}</td>
+              <tr
+                key={`${b.product_id}-${b.box_no}`}
+                className={`clickable ${highlight === b.product_id ? "row-on" : ""}`}
+                onClick={() => onHighlight(b.product_id)}
+                title="Highlight in the 3D view"
+              >
+                <td>
+                  <span className="swatch" style={{ background: colors.get(b.product_id) ?? "#999" }} /> {b.sku}
+                </td>
                 <td className="small">
                   {b.box_name} <span className="muted">· {f.dims(b.dims[0], b.dims[1], b.dims[2])}</span>
                 </td>
