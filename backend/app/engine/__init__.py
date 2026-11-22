@@ -11,6 +11,7 @@ from .constraints import validate
 from .expand import ShipmentLine, expand_lines
 from .layered import pack_layered
 from .model import ENGINE_VERSION, MAX_STANDING_RATIO, BoxInstance, BoxSpec, PalletResult, PalletSpec, Placement, ShipmentResult
+from .pallet_state import RULES
 from .result import finalize_pallet
 from .tightest import pack_tightest, score
 
@@ -38,12 +39,14 @@ def pack(lines: list[ShipmentLine], pallet: PalletSpec, mode: str = "layered") -
     boxes, warnings = expand_lines(lines)
     if not boxes:
         states, unplaced = [], []
-    elif mode == "layered":
-        states, unplaced = pack_layered(boxes, pallet)
     else:
-        # Tightest fit = best of the free-mixing extreme-point runs *and* the layer-first result,
-        # so it never needs more pallets than Layered.
-        candidates = [pack_tightest(boxes, pallet), pack_layered(boxes, pallet)]
+        # Layered = the same layer-building logic under each placement rule for the leftovers;
+        # the best wins (so it's never worse than any single rule). Tightest fit = the free-mixing
+        # extreme-point runs (every ordering × every rule) *and* the layered results, so it never
+        # needs more pallets than Layered.
+        candidates = [pack_layered(boxes, pallet, rule) for rule in RULES]
+        if mode == "tightest":
+            candidates.append(pack_tightest(boxes, pallet))
         states, unplaced = min(candidates, key=lambda c: score(*c))
 
     seen: set[tuple] = set()

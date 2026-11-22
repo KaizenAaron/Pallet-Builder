@@ -1,4 +1,5 @@
-"""Tightest-fit packer: extreme-point heuristic, best of several box orderings.
+"""Tightest-fit packer: extreme-point heuristic, best of several box orderings and both
+placement rules.
 
 Boxes are mixed freely. For each ordering, boxes are placed first-fit across open pallets at the
 lowest/back-most/left-most feasible extreme point. The best run wins: fewest unplaced boxes, then
@@ -10,7 +11,7 @@ from __future__ import annotations
 from typing import Callable
 
 from .model import BoxInstance, PalletSpec
-from .pallet_state import PalletState
+from .pallet_state import LOW_TOP, RULES, PalletState
 
 SortKey = Callable[[BoxInstance], tuple]
 
@@ -36,14 +37,14 @@ ORDERINGS: list[tuple[str, SortKey]] = [
 
 
 def pack_boxes_into(
-    states: list[PalletState], boxes: list[BoxInstance], spec: PalletSpec
+    states: list[PalletState], boxes: list[BoxInstance], spec: PalletSpec, rule: str = LOW_TOP
 ) -> tuple[list[PalletState], list[BoxInstance]]:
     """First-fit `boxes` into `states` (mutated), opening new pallets as needed."""
     unplaced: list[BoxInstance] = []
     for box in boxes:
         if any(st.place_at_best_point(box) for st in states):
             continue
-        fresh = PalletState(spec)
+        fresh = PalletState(spec, rule=rule)
         if fresh.place_at_best_point(box):
             states.append(fresh)
         else:
@@ -57,11 +58,14 @@ def score(states: list[PalletState], unplaced: list[BoxInstance]) -> tuple:
 
 
 def pack_tightest(boxes: list[BoxInstance], spec: PalletSpec) -> tuple[list[PalletState], list[BoxInstance]]:
+    """Every ordering × both placement rules; the best-scoring run wins (ties → the earlier, i.e.
+    LOW_TOP). Trying BOTTOM_LEFT too means tightest never does worse than the original rule."""
     best = None
-    for _name, key in ORDERINGS:
-        states, unplaced = pack_boxes_into([], sorted(boxes, key=key), spec)
-        s = score(states, unplaced)
-        if best is None or s < best[0]:
-            best = (s, states, unplaced)
+    for rule in RULES:
+        for _name, key in ORDERINGS:
+            states, unplaced = pack_boxes_into([], sorted(boxes, key=key), spec, rule)
+            s = score(states, unplaced)
+            if best is None or s < best[0]:
+                best = (s, states, unplaced)
     assert best is not None
     return best[1], best[2]

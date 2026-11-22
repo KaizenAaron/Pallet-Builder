@@ -16,7 +16,7 @@ import math
 from dataclasses import dataclass
 
 from .model import EPS, BoxInstance, BoxSpec, PalletSpec
-from .pallet_state import PalletState
+from .pallet_state import LOW_TOP, PalletState
 from .tightest import ORDERINGS, pack_boxes_into
 
 Rect = tuple[float, float, float, float]  # x, y, dx, dy
@@ -110,7 +110,9 @@ def _try_layer(state: PalletState, boxes: list[BoxInstance], plan: GroupPlan) ->
     return True
 
 
-def pack_layered(boxes: list[BoxInstance], pallet: PalletSpec) -> tuple[list[PalletState], list[BoxInstance]]:
+def pack_layered(
+    boxes: list[BoxInstance], pallet: PalletSpec, rule: str = LOW_TOP
+) -> tuple[list[PalletState], list[BoxInstance]]:
     groups: dict[tuple, list[BoxInstance]] = {}
     for b in boxes:
         groups.setdefault(b.spec.key, []).append(b)
@@ -143,7 +145,7 @@ def pack_layered(boxes: list[BoxInstance], pallet: PalletSpec) -> tuple[list[Pal
                     placed = True
                     break
             if not placed:
-                st = PalletState(pallet)
+                st = PalletState(pallet, rule=rule)
                 if _try_layer(st, layer, plan):
                     states.append(st)
                     layered_ok.append(True)
@@ -152,5 +154,5 @@ def pack_layered(boxes: list[BoxInstance], pallet: PalletSpec) -> tuple[list[Pal
         remainder.extend(queue)
 
     order = ORDERINGS[0][1]
-    states, unplaced = pack_boxes_into(states, sorted(remainder, key=order), pallet)
+    states, unplaced = pack_boxes_into(states, sorted(remainder, key=order), pallet, rule)
     return states, unplaced

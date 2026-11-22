@@ -24,6 +24,9 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
     fragile/non-stackable on top, leftovers as a mixed top layer.
   - **Tightest fit** — mixes boxes freely to use as few pallets as possible. It also considers
     the layered result, so it never needs more pallets than Layered.
+  - Both modes keep the load **flat**: each box goes where its top ends lowest, filling the space
+    beside and on top of big boxes before building higher (no thin towers of small boxes). Several
+    variations are tried and the best pallet wins — fewest pallets, then the lowest one.
 - **Stability:** a box that isn't marked *this side up* never stands on a narrow face — its
   height may be at most 2× the narrower side it rests on, so long boxes aren't stood on end and
   flat panels aren't stood on edge. If a box is too long to lie flat on the pallet (e.g. a 50"

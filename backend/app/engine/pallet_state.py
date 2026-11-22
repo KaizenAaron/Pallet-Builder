@@ -19,6 +19,12 @@ from __future__ import annotations
 from .model import EPS, BoxInstance, PalletSpec, Placement
 
 DEFAULT_SUPPORT_RATIO = 0.75
+
+# Placement rules for the extreme-point search (see place_at_best_point).
+LOW_TOP = "low_top"  # default: the spot where the box's top ends lowest — keeps the load flat
+LOW_TOP_ROT = "low_top_rot"  # same, but ties between turned orientations prefer the narrower dx
+BOTTOM_LEFT = "bottom_left"  # first feasible spot that is lowest, then back-most, then left-most
+RULES = (LOW_TOP, LOW_TOP_ROT, BOTTOM_LEFT)
 DECK = -1
 
 
@@ -31,8 +37,9 @@ def footprint_overlap(ax, ay, adx, ady, bx, by, bdx, bdy) -> float:
 
 
 class PalletState:
-    def __init__(self, spec: PalletSpec, support_ratio: float = DEFAULT_SUPPORT_RATIO):
+    def __init__(self, spec: PalletSpec, support_ratio: float = DEFAULT_SUPPORT_RATIO, rule: str = LOW_TOP):
         self.spec = spec
+        self.rule = rule
         self.support_ratio = support_ratio
         self.placements: list[Placement] = []
         self.supports: list[list[tuple[int, float]]] = []  # per placement: (support index | DECK, contact area)
@@ -199,8 +206,15 @@ class PalletState:
         return best
 
     def place_at_best_point(self, box: BoxInstance) -> bool:
-        """Extreme-point placement: lowest, then back-most, then left-most point that accepts the
-        box; at each point prefer the lowest orientation, then the largest footprint."""
+        """Extreme-point placement of one box. Every candidate still goes through check()/
+        try_place(), so the rule only decides *which* legal spot is used:
+
+        - LOW_TOP (default): among all points × allowed orientations, the spot where the box's
+          top ends lowest; ties → lower bottom, larger footprint, back, left. Keeps the load flat
+          and fills space beside/on top of big boxes before building up (no thin towers).
+        - BOTTOM_LEFT: the first feasible spot scanning points lowest/back-most/left-most first,
+          lowest orientation first. Tightest fit also tries this rule and keeps the better result.
+        """
         if box.spec in self._no_fit:
             return False
         sp = box.spec
@@ -211,11 +225,31 @@ class PalletState:
         capacity = (s.length + 2 * s.max_overhang) * (s.width + 2 * s.max_overhang) * s.max_load_height
         if self.used_volume + sp.length * sp.width * sp.height > capacity + EPS:
             return False
-        orients = sorted(box.spec.orientations(self.spec), key=lambda d: (d[2], -(d[0] * d[1]), -d[0]))
-        for (x, y, z) in self.points:
-            for (dx, dy, dz) in orients:
-                if self.try_place(box, x, y, z, dx, dy, dz):
-                    return True
+        # Equal-scoring spots are common (a box turned 90° often fits the same corner). Which one
+        # wins changes everything placed after it, so LOW_TOP and LOW_TOP_ROT break such ties in
+        # opposite directions and tightest fit keeps whichever run comes out better.
+        turn = 1 if self.rule == LOW_TOP_ROT else -1
+        orients = sorted(box.spec.orientations(self.spec), key=lambda d: (d[2], -(d[0] * d[1]), turn * d[0]))
+        if self.rule == BOTTOM_LEFT:
+            for (x, y, z) in self.points:
+                for (dx, dy, dz) in orients:
+                    if self.try_place(box, x, y, z, dx, dy, dz):
+                        return True
+        else:
+            best = None
+            limit = s.max_load_height + EPS
+            for (x, y, z) in self.points:
+                for (dx, dy, dz) in orients:
+                    top = z + dz
+                    if top > limit:
+                        continue
+                    key = (round(top, 6), round(z, 6), -round(dx * dy, 6), round(y, 6), round(x, 6))
+                    if best is not None and key >= best[0]:
+                        continue  # can't beat the best legal spot so far: skip the full check
+                    if self.check(box, x, y, z, dx, dy, dz) is not None:
+                        best = (key, (x, y, z, dx, dy, dz))
+            if best is not None:
+                return self.try_place(box, *best[1])
         self._no_fit.add(box.spec)
         return False
 

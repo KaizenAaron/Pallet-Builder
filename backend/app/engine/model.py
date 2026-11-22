@@ -18,7 +18,7 @@ EPS = 1e-6
 
 # Bump whenever packing rules change, so saved estimates made under older rules show as
 # "out of date" (it is part of the shipment input fingerprint).
-ENGINE_VERSION = "2"
+ENGINE_VERSION = "3"
 
 # Stability: a box that isn't marked this-side-up may not stand on a face whose height is more
 # than this many times the narrower side of that face (no 50" boxes standing on end, no panels

@@ -63,8 +63,16 @@ docker compose up --build                           # app at http://localhost:80
   of silently keeping a layout the current engine wouldn't produce.
 - **Modes**: `layered` = full single-SKU layers (best grid or two-block pattern, heaviest group
   first, non-stackable last), leftovers packed on top with the extreme-point packer. `tightest` =
-  best of several extreme-point orderings **and** the layered result, so tightest never needs more
-  pallets than layered. Both are deterministic.
+  free-mixing extreme-point runs **and** the layered results, so tightest never needs more pallets
+  than layered. Both are deterministic.
+- **Placement rules** (`pallet_state.RULES`): `low_top` (default — the spot where the box's *top*
+  ends lowest, so loads stay flat instead of growing thin towers), `low_top_rot` (same, opposite
+  tie-break between a box and its 90°-turned twin — that one choice can cascade into a very
+  different load), and `bottom_left` (the original first-fit rule). **Layered** runs its layer
+  logic under every rule and keeps the best; **tightest** runs every ordering × every rule plus
+  the layered results. Each mode is therefore never worse than any single rule (checked on 300
+  random orders: 0 worse, tightest better on 105). `test_sconce_order_*` pins a real user order
+  (1 pallet, 48.5") that the original rule built 62.5" tall.
 - **Golden numbers are pinned**: `tests/engine/test_engine.py` expected values are hand-checked
   (each docstring shows the arithmetic). If a change breaks them, the change is wrong (or needs
   explicit sign-off from the user), not the tests.
@@ -133,7 +141,7 @@ docker compose up --build                           # app at http://localhost:80
   `SET NULL`; SQLite gets `PRAGMA foreign_keys=ON` in `db.py` so it behaves like Postgres).
   **Size guard** (`LIMITS` in `services/shipments.py`): boxes and boxes × distinct box types are
   capped per mode (tightest is ~5–10× slower) so a request can't tie up the server — numbers come
-  from timing the engine; re-measure before raising them.
+  from timing the engine (v3: worst allowed order ≈ 11 s); re-measure before raising them.
 - **Engine performance**: `PalletState` caches box specs that found no position since the last
   placement (`_no_fit`) and rejects boxes that can't fit by remaining weight/volume. Both are
   exact (results identical, golden tests unchanged) and took 4,000-box tightest runs from ~100 s

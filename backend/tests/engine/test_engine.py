@@ -258,3 +258,36 @@ def test_validator_rejects_a_box_standing_on_end():
     assert any("stands too tall" in e for e in errors)
     long_box = BoxInstance(2, box(l=50, w=8, h=6))  # can't lie on a 48" deck: standing is allowed
     assert validate(PALLET, [Placement(long_box, 0, 0, 0, 8, 6, 50)]) == []
+
+
+# ---------------------------------------------------------------- real order: no sconce towers
+
+
+def _sconce_order():
+    """A real order (user-reported). The previous placement rule stacked the 21 flat sconces in
+    three thin towers to 62.5" (and Layered needed 2 pallets); the user's existing program builds
+    it ~49" tall. Weights are per box, from the user's screenshot."""
+    return [
+        line([box("CURVE", 1, 37, 9, 9, 7.0)], 2),
+        line([box("PORTAL", 1, 15, 15, 4, 7.0)], 21),
+        line([box("L19", 1, 15, 15, 27, 7.0), box("L19", 2, 13, 13, 16, 5.0)], 1),
+        line([box("L28", 1, 21, 21, 33, 8.0), box("L28", 2, 13, 13, 16, 5.0)], 1),
+    ]
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_sconce_order_builds_one_compact_pallet(mode):
+    """Pinned: 1 pallet, 48.5" overall (43" of load on the 5.5" deck), 231 lb gross."""
+    res = run(_sconce_order(), mode)
+    assert res.pallet_count == 1 and res.unplaced == []
+    p = res.pallets[0]
+    assert (p.height, p.gross_weight) == (48.5, 231)
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_flat_boxes_spread_out_instead_of_towering(mode):
+    """No column of the flat 15×15×4 sconces rises above the tallest other box on the pallet."""
+    p = run(_sconce_order(), mode).pallets[0]
+    others_top = max(pl.top for pl in p.placements if pl.spec.sku != "PORTAL")
+    portal_top = max(pl.top for pl in p.placements if pl.spec.sku == "PORTAL")
+    assert portal_top <= others_top + 1e-9

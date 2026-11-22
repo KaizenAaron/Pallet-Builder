@@ -23,9 +23,10 @@ from ..models import PalletType, Product, Shipment, ShipmentPallet
 
 # Size guards, measured on the engine (see CLAUDE.md): `boxes × distinct box types` tracks how
 # long the extreme-point search takes; layered is far cheaper because full layers skip it.
+# Re-timed for engine v3 (every placement rule is tried): the worst allowed order takes ~11 s.
 LIMITS = {
-    "layered": {"boxes": 5000, "work": 1_000_000},
-    "tightest": {"boxes": 1500, "work": 300_000},
+    "layered": {"boxes": 5000, "work": 500_000},
+    "tightest": {"boxes": 1500, "work": 120_000},
 }
 
 
