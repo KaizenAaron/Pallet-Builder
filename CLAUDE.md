@@ -68,11 +68,24 @@ docker compose up --build                           # app at http://localhost:80
 - **Placement rules** (`pallet_state.RULES`): `low_top` (default — the spot where the box's *top*
   ends lowest, so loads stay flat instead of growing thin towers), `low_top_rot` (same, opposite
   tie-break between a box and its 90°-turned twin — that one choice can cascade into a very
-  different load), and `bottom_left` (the original first-fit rule). **Layered** runs its layer
-  logic under every rule and keeps the best; **tightest** runs every ordering × every rule plus
-  the layered results. Each mode is therefore never worse than any single rule (checked on 300
-  random orders: 0 worse, tightest better on 105). `test_sconce_order_*` pins a real user order
+  different load), `bottom_left` (the original first-fit rule) and `narrow` (smallest footprint
+  first, so bulky light boxes stand upright on top of dense layers). **Layered** runs its layer
+  logic under both group orders (`layered.GROUP_ORDERS`: heaviest box first, densest first) × every
+  rule; **tightest** runs every ordering (incl. densest-first) × every rule plus the layered
+  results. The best by `tightest.score` wins, so each mode can only gain candidates, never lose
+  them — **a change must never make any order need more pallets** (check with a randomized
+  old-vs-new comparison before committing engine changes). `test_sconce_order_*` pins a real order
   (1 pallet, 48.5") that the original rule built 62.5" tall.
+- **Score / heavy at the bottom** (`tightest.score`, signed off by the user): unplaced boxes, then
+  pallet count, then *tallest pallet + `HEAVY_LOW_INCHES` (36) × share of the shipment's weight
+  resting on lighter-for-their-size boxes of another product* (`PalletState.weight_on_lighter`),
+  then total height. So a light bulky carton carrying dense boxes is avoided even at the cost of
+  some height, but a small inversion never buys a much taller pallet. `test_heavy_boxes_go_under_*`
+  pins the real pendant + Volo order (75" pallet: Volos on the floor, pendants standing on top,
+  74.5", 1 pallet). Tried and rejected: "a box carries ≤ N× its own weight" (blocks plain stacks
+  of identical boxes, adds pallets) and a hard "denser always below" rule (extra pallets on 73 of
+  120 random orders). For truly fragile boxes, the box index's Max load on top / Stackable is the
+  exact tool.
 - **Golden numbers are pinned**: `tests/engine/test_engine.py` expected values are hand-checked
   (each docstring shows the arithmetic). If a change breaks them, the change is wrong (or needs
   explicit sign-off from the user), not the tests.
@@ -141,7 +154,7 @@ docker compose up --build                           # app at http://localhost:80
   `SET NULL`; SQLite gets `PRAGMA foreign_keys=ON` in `db.py` so it behaves like Postgres).
   **Size guard** (`LIMITS` in `services/shipments.py`): boxes and boxes × distinct box types are
   capped per mode (tightest is ~5–10× slower) so a request can't tie up the server — numbers come
-  from timing the engine (v3: worst allowed order ≈ 11 s); re-measure before raising them.
+  from timing the engine (v4: worst allowed order ≈ 11–12 s); re-measure before raising them.
 - **Engine performance**: `PalletState` caches box specs that found no position since the last
   placement (`_no_fit`) and rejects boxes that can't fit by remaining weight/volume. Both are
   exact (results identical, golden tests unchanged) and took 4,000-box tightest runs from ~100 s

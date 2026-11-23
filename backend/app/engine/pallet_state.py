@@ -24,7 +24,8 @@ DEFAULT_SUPPORT_RATIO = 0.75
 LOW_TOP = "low_top"  # default: the spot where the box's top ends lowest — keeps the load flat
 LOW_TOP_ROT = "low_top_rot"  # same, but ties between turned orientations prefer the narrower dx
 BOTTOM_LEFT = "bottom_left"  # first feasible spot that is lowest, then back-most, then left-most
-RULES = (LOW_TOP, LOW_TOP_ROT, BOTTOM_LEFT)
+NARROW = "narrow"  # smallest footprint first — lets bulky light boxes stand upright on dense layers
+RULES = (LOW_TOP, LOW_TOP_ROT, BOTTOM_LEFT, NARROW)
 DECK = -1
 
 
@@ -141,6 +142,25 @@ class PalletState:
         self._update_points(p)
         return True
 
+    def weight_on_lighter(self) -> float:
+        """Weight pressing directly on boxes of *another* product that are less dense (lighter for
+        their size) than the box resting on them — its own weight plus everything on it. Same-
+        product stacks never count. Lower is better: heavy, dense boxes belong at the bottom."""
+        total = 0.0
+        for j, sups in enumerate(self.supports):
+            top = self.placements[j].spec
+            top_density = top.weight / (top.length * top.width * top.height)
+            area = sum(a for _, a in sups)
+            for i, a in sups:
+                if i == DECK:
+                    continue
+                low = self.placements[i].spec
+                if low.product_id == top.product_id:
+                    continue
+                if low.weight / (low.length * low.width * low.height) < top_density - 1e-12:
+                    total += (top.weight + self.loads[j]) * (a / area if area > 0 else 1.0)
+        return total
+
     def snapshot(self):
         return (len(self.placements), list(self.loads), self.net_weight, list(self.points), self.used_volume)
 
@@ -214,6 +234,8 @@ class PalletState:
           and fills space beside/on top of big boxes before building up (no thin towers).
         - BOTTOM_LEFT: the first feasible spot scanning points lowest/back-most/left-most first,
           lowest orientation first. Tightest fit also tries this rule and keeps the better result.
+        - NARROW: like LOW_TOP but the smallest footprint wins first, so a bulky light box stands
+          upright on top of dense layers instead of lying across them (and blocking its twin).
         """
         if box.spec in self._no_fit:
             return False
@@ -243,7 +265,10 @@ class PalletState:
                     top = z + dz
                     if top > limit:
                         continue
-                    key = (round(top, 6), round(z, 6), -round(dx * dy, 6), round(y, 6), round(x, 6))
+                    if self.rule == NARROW:
+                        key = (round(dx * dy, 6), round(top, 6), round(z, 6), round(y, 6), round(x, 6))
+                    else:
+                        key = (round(top, 6), round(z, 6), -round(dx * dy, 6), round(y, 6), round(x, 6))
                     if best is not None and key >= best[0]:
                         continue  # can't beat the best legal spot so far: skip the full check
                     if self.check(box, x, y, z, dx, dy, dz) is not None:

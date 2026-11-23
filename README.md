@@ -26,7 +26,11 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
     the layered result, so it never needs more pallets than Layered.
   - Both modes keep the load **flat**: each box goes where its top ends lowest, filling the space
     beside and on top of big boxes before building higher (no thin towers of small boxes). Several
-    variations are tried and the best pallet wins — fewest pallets, then the lowest one.
+    variations are tried and the best pallet wins — fewest pallets first.
+  - **Heavy at the bottom:** dense boxes go under bulky light ones. When the pallet count is the
+    same, a layout that keeps weight off lighter-for-their-size boxes wins even if it's a little
+    taller (never above the pallet's max height). For boxes that must carry nothing (or only a
+    little), set **Stackable = N** or **Max load on top** in the box index.
 - **Stability:** a box that isn't marked *this side up* never stands on a narrow face — its
   height may be at most 2× the narrower side it rests on, so long boxes aren't stood on end and
   flat panels aren't stood on edge. If a box is too long to lie flat on the pallet (e.g. a 50"

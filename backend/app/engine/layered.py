@@ -3,7 +3,7 @@
 1. Identical boxes are grouped. For each group, the best single-box layer pattern is chosen:
    a plain grid in either rotation, or a two-block pattern (some rows/columns turned 90°).
    Boxes that are not this-side-up may also stand on another face if that packs better.
-2. Full layers are stacked heaviest group first, non-stackable groups last, each layer centered
+2. Full layers are stacked heaviest (or densest) group first, non-stackable groups last, each layer centered
    on the deck. A layer goes on the first pallet that accepts every box in it; otherwise a new
    pallet is started.
 3. Leftover boxes (partial layers) are packed on top with the extreme-point packer, first-fit
@@ -110,16 +110,27 @@ def _try_layer(state: PalletState, boxes: list[BoxInstance], plan: GroupPlan) ->
     return True
 
 
+# Which group's full layers go down first. Both are tried and the best result wins (see pack()):
+# "weight" = heavier box first (the original order), "density" = weight for its size first (a big
+# light carton is mostly air). Neither alone is better on every order.
+GROUP_ORDERS = ("weight", "density")
+
+
 def pack_layered(
-    boxes: list[BoxInstance], pallet: PalletSpec, rule: str = LOW_TOP
+    boxes: list[BoxInstance], pallet: PalletSpec, rule: str = LOW_TOP, group_order: str = "weight"
 ) -> tuple[list[PalletState], list[BoxInstance]]:
     groups: dict[tuple, list[BoxInstance]] = {}
     for b in boxes:
         groups.setdefault(b.spec.key, []).append(b)
     plans = [plan_group(bs[0].spec, bs, pallet) for bs in groups.values()]
+    def _density(g: GroupPlan) -> float:
+        return round(g.spec.weight / (g.spec.length * g.spec.width * g.spec.height), 9)
+
+    primary = (lambda g: -_density(g)) if group_order == "density" else (lambda g: -g.spec.weight)
     plans.sort(
         key=lambda g: (
             not g.spec.stackable,
+            primary(g),
             -g.spec.weight,
             -(g.spec.length * g.spec.width * g.spec.height),
             g.spec.sku,

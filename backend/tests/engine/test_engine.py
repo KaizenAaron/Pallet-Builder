@@ -291,3 +291,47 @@ def test_flat_boxes_spread_out_instead_of_towering(mode):
     others_top = max(pl.top for pl in p.placements if pl.spec.sku != "PORTAL")
     portal_top = max(pl.top for pl in p.placements if pl.spec.sku == "PORTAL")
     assert portal_top <= others_top + 1e-9
+
+
+# ---------------------------------------------------------------- real order: heavy at the bottom
+
+
+def _pendant_volo_order(**pendant):
+    """A real order (user-reported): 2 Lex 28 pendants (21×21×33 box, 8 lb — mostly air — plus a
+    13×13×16 light engine, 5 lb) and 8 Volo flushmounts (23×23×9, 7 lb). The old engine stood the
+    light pendant boxes on the floor carrying four Volos (28 lb) each."""
+    return [
+        line([box("L28", 1, 21, 21, 33, 8.0, **pendant), box("L28", 2, 13, 13, 16, 5.0)], 2),
+        line([box("VOLO", 1, 23, 23, 9, 7.0)], 8),
+    ]
+
+
+def _volos_on_pendants(p) -> int:
+    pend = [q for q in p.placements if q.spec.sku == "L28" and q.spec.box_no == 1]
+    return sum(
+        1
+        for pl in p.placements
+        for q in pend
+        if pl.spec.sku == "VOLO" and abs(pl.z - q.top) < 1e-6
+        and pl.x < q.x + q.dx and q.x < pl.x + pl.dx and pl.y < q.y + q.dy and q.y < pl.y + pl.dy
+    )
+
+
+@pytest.mark.parametrize("pendant", [{}, {"max_load_on_top": 10.0}, {"stackable": False}])
+def test_heavy_boxes_go_under_light_bulky_ones(pendant):
+    """75" pallet (the user's): Volos 4 high on the floor (36"), pendants standing on top (33"),
+    engines on the floor beside them = 74.5" on one pallet, nothing resting on a pendant — with or
+    without a load limit on the pendant box (the old search needed 2 pallets with one)."""
+    res = run(_pendant_volo_order(**pendant), "tightest", pallet=PalletSpec(max_total_height=75))
+    assert res.pallet_count == 1
+    p = res.pallets[0]
+    assert p.height == 74.5
+    assert not any(pl.z == 0 for pl in p.placements if pl.spec.sku == "L28" and pl.spec.box_no == 1)
+    assert _volos_on_pendants(p) == 0
+
+
+def test_heavy_low_never_costs_a_pallet():
+    """On a 72" pallet the heavy-at-bottom layout doesn't fit one pallet (69" of load > 66.5"), so
+    the estimate stays at 1 pallet with the pendants underneath — pallet count always comes first."""
+    res = run(_pendant_volo_order(), "tightest")
+    assert res.pallet_count == 1 and res.pallets[0].height == 62.5

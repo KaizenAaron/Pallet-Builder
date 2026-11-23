@@ -21,6 +21,11 @@ def _vol(b: BoxInstance) -> float:
     return s.length * s.width * s.height
 
 
+def _density(b: BoxInstance) -> float:
+    s = b.spec
+    return s.weight / (s.length * s.width * s.height)
+
+
 def _base(b: BoxInstance) -> float:
     s = b.spec
     dims = sorted((s.length, s.width, s.height))
@@ -33,6 +38,8 @@ ORDERINGS: list[tuple[str, SortKey]] = [
     ("weight", lambda b: (not b.spec.stackable, -b.spec.weight, -_vol(b), b.spec.sku, b.spec.box_no, b.uid)),
     ("footprint", lambda b: (not b.spec.stackable, -_base(b), -_vol(b), b.spec.sku, b.spec.box_no, b.uid)),
     ("height", lambda b: (not b.spec.stackable, -max(b.spec.length, b.spec.width, b.spec.height), -_vol(b), b.spec.sku, b.spec.box_no, b.uid)),
+    # densest first: dense boxes build the base, bulky light boxes (mostly air) go on top
+    ("density", lambda b: (not b.spec.stackable, -_density(b), -b.spec.weight, b.spec.sku, b.spec.box_no, b.uid)),
 ]
 
 
@@ -52,9 +59,24 @@ def pack_boxes_into(
     return states, unplaced
 
 
+# How much height (inches) a fully inverted load is worth: each 10% of the shipment's weight that
+# rests on lighter-for-their-size boxes of another product counts like 3.6" of extra height.
+# Big inversions (a light pendant carton carrying a stack of dense fixtures) beat a few inches of
+# height; small ones don't justify a much taller pallet. Calibrated on two real orders (any value
+# from ~18 to ~700 picks the right layout for both); see CLAUDE.md.
+HEAVY_LOW_INCHES = 36.0
+
+
 def score(states: list[PalletState], unplaced: list[BoxInstance]) -> tuple:
+    """Lower is better: unplaced boxes, then pallets, then a cost that adds the tallest pallet's
+    height to a penalty for weight resting on lighter-for-their-size boxes (heavy at the bottom,
+    even at the price of some height — signed off by the user), then total height."""
     tops = [st.top for st in states]
-    return (len(unplaced), len(states), round(max(tops, default=0.0), 6), round(sum(tops), 6))
+    net = sum(st.net_weight for st in states)
+    on_lighter = sum(st.weight_on_lighter() for st in states)
+    share = on_lighter / net if net > 0 else 0.0
+    cost = max(tops, default=0.0) + HEAVY_LOW_INCHES * share
+    return (len(unplaced), len(states), round(cost, 6), round(sum(tops), 6))
 
 
 def pack_tightest(boxes: list[BoxInstance], spec: PalletSpec) -> tuple[list[PalletState], list[BoxInstance]]:
