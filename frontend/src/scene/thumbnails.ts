@@ -27,7 +27,7 @@ function renderer(width: number, height: number): PalletScene {
 export function renderThumbnails(
   cacheKey: string,
   pallets: ScenePallet[],
-  deck: PalletDeck,
+  deck: PalletDeck, // fallback when a pallet carries no deck of its own
   colors: ColorMap,
   width = 480,
   height = 300,
@@ -37,7 +37,7 @@ export function renderThumbnails(
     const key = `${cacheKey}|${p.index}|${width}x${height}`;
     let url = cache.get(key);
     if (!url) {
-      scene.load(p, deck, colors);
+      scene.load(p, p.deck ?? deck, colors);
       scene.setView("iso");
       url = scene.snapshot();
       cache.set(key, url);

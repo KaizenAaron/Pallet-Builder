@@ -19,6 +19,11 @@ Stage 2 will port the same engine to an Odoo 19 App Store module.
   *this side up*, *stackable*, *max load on top*. Small items can share a box (*units per box*).
 - **Pallet types**: footprint (default 48 × 40 in), deck height, tare weight, max total height,
   max gross weight and allowed overhang.
+- **Automatic pallet selection** (the default on new shipments): the program picks the pallet type
+  for each pallet from your pallet types — fewest pallets first, then the least floor space. So
+  when one box needs a 48 × 48, only that pallet is a 48 × 48 and the overflow goes on standard
+  48 × 40s. Untick "Use in automatic selection" on a pallet type to keep it out, or set a shipment
+  to one specific pallet type.
 - **Two modes**, switchable per shipment:
   - **Layered** — warehouse-friendly. Full layers of one box type, heaviest at the bottom,
     fragile/non-stackable on top, leftovers as a mixed top layer.

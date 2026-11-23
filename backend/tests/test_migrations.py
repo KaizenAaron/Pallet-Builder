@@ -51,7 +51,7 @@ def test_upgrade_from_phase1_database(scratch_url, monkeypatch):
     with eng.connect() as c:
         forced = c.execute(text("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'pallet_types'")).scalar()
         assert forced is True
-        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0004"
+        assert c.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0005"
     eng.dispose()
 
 

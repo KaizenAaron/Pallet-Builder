@@ -5,7 +5,7 @@ import { MOBILE, useMediaQuery } from "../hooks";
 import { Alert, Badge, Button, Card, Field, Input, useAsync } from "../components/ui";
 
 type FormKey = "length" | "width" | "deck_height" | "tare_weight" | "max_total_height" | "max_gross_weight" | "max_overhang";
-type Form = { name: string } & Record<FormKey, string>;
+type Form = { name: string; auto_select: boolean } & Record<FormKey, string>;
 
 const NUMERIC: { key: FormKey; label: string; hint?: string }[] = [
   { key: "length", label: "Length (in)" },
@@ -19,6 +19,7 @@ const NUMERIC: { key: FormKey; label: string; hint?: string }[] = [
 
 const EMPTY: Form = {
   name: "",
+  auto_select: true,
   length: "48",
   width: "40",
   deck_height: "5.5",
@@ -30,6 +31,7 @@ const EMPTY: Form = {
 
 const toForm = (p: PalletType): Form => ({
   name: p.name,
+  auto_select: p.auto_select,
   ...(Object.fromEntries(NUMERIC.map(({ key }) => [key, String(p[key])])) as Record<FormKey, string>),
 });
 
@@ -48,7 +50,7 @@ export default function PalletTypesPage() {
 
   function save() {
     void run(async () => {
-      const body: Record<string, unknown> = { name: form.name };
+      const body: Record<string, unknown> = { name: form.name, auto_select: form.auto_select };
       for (const { key, label } of NUMERIC) {
         const n = Number(form[key]);
         if (form[key].trim() === "" || !Number.isFinite(n)) throw new Error(`${label} must be a number`);
@@ -67,7 +69,8 @@ export default function PalletTypesPage() {
         <div>
           <h1>Pallet types</h1>
           <p className="muted" style={{ margin: 0 }}>
-            Footprint and limits used when building pallets. The default is preselected on new shipments.
+            Footprint and limits used when building pallets. Shipments set to Automatic pick from the types marked
+            “Automatic”, using a bigger pallet only where a box needs it.
           </p>
         </div>
         <span className="spacer" />
@@ -97,6 +100,10 @@ export default function PalletTypesPage() {
               </Field>
             ))}
           </div>
+          <label className="row small" style={{ gap: 6, marginBottom: 14 }}>
+            <input type="checkbox" checked={form.auto_select} onChange={(e) => setForm({ ...form, auto_select: e.target.checked })} />
+            Use in automatic selection (shipments set to “Automatic” may pick this pallet)
+          </label>
           <div className="row">
             <Button variant="primary" disabled={busy || !form.name.trim()} onClick={save}>
               Save
@@ -118,6 +125,7 @@ export default function PalletTypesPage() {
                 <th className="num">Max height (in)</th>
                 <th className="num">Max gross (lb)</th>
                 {!mobile && <th className="num">Overhang (in)</th>}
+                <th title="Shipments set to Automatic may pick this pallet">Automatic</th>
                 {isAdmin && <th />}
               </tr>
             </thead>
@@ -135,6 +143,7 @@ export default function PalletTypesPage() {
                   <td className="num">{p.max_total_height}</td>
                   <td className="num">{p.max_gross_weight.toLocaleString()}</td>
                   {!mobile && <td className="num">{p.max_overhang}</td>}
+                  <td>{p.auto_select ? <Badge tone="ok">yes</Badge> : <Badge>no</Badge>}</td>
                   {isAdmin && (
                     <td className="num">
                       <div className="row" style={{ justifyContent: "flex-end", gap: 6 }}>

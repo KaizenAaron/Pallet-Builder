@@ -335,3 +335,61 @@ def test_heavy_low_never_costs_a_pallet():
     the estimate stays at 1 pallet with the pendants underneath — pallet count always comes first."""
     res = run(_pendant_volo_order(), "tightest")
     assert res.pallet_count == 1 and res.pallets[0].height == 62.5
+
+
+# ---------------------------------------------------------------- automatic pallet selection
+
+from app.engine import pack_auto  # noqa: E402
+
+STD = PalletSpec(name="48 × 40")
+SQUARE = PalletSpec(length=48, width=48, name="48 × 48")
+
+
+def _mixed_order():
+    """One 47×46 crate that only fits a 48×48 deck, plus 120 small cartons (12×10×10, 10 lb) —
+    96 per 48×40 pallet — so the order needs two pallets."""
+    return [
+        line([box("CRATE", 1, 47, 46, 20, 60.0, this_side_up=True)], 1),
+        line([box("SMALL", 1, 12, 10, 10, 10.0)], 120),
+    ]
+
+
+def _run_auto(lines, pallets, mode="tightest"):
+    res = pack_auto(lines, pallets, mode)
+    for p in res.pallets:
+        assert validate(p.pallet, p.placements) == [], p.index
+    return res
+
+
+@pytest.mark.parametrize("mode", MODES)
+def test_auto_uses_big_pallet_only_where_needed(mode):
+    res = _run_auto(_mixed_order(), [STD, SQUARE], mode)
+    assert res.unplaced == [] and res.pallet_count == 2
+    names = [p.pallet.name for p in res.pallets]
+    assert names == ["48 × 48", "48 × 40"]  # largest first
+    crate_on = [p.pallet.name for p in res.pallets if any(pl.spec.sku == "CRATE" for pl in p.placements)]
+    assert crate_on == ["48 × 48"]
+    assert (res.pallets[1].length, res.pallets[1].width) == (48, 40)
+    # forcing one type: all 48×48, or the crate can't go on at all
+    assert {p.pallet.name for p in run(_mixed_order(), mode, pallet=SQUARE).pallets} == {"48 × 48"}
+    assert len(run(_mixed_order(), mode, pallet=STD).unplaced) == 1
+
+
+def test_auto_with_one_type_equals_pack():
+    for lines in (_mixed_order(), _sconce_order(), mixed_load()):
+        assert pack_auto(lines, [STD], "tightest").to_dict() == pack(lines, STD, "tightest").to_dict()
+
+
+@pytest.mark.parametrize("lines", [_sconce_order(), _pendant_volo_order(), mixed_load(), _sample_order()])
+def test_auto_never_worse_than_any_single_type(lines):
+    types = [STD, SQUARE, PalletSpec(length=40, width=48, max_total_height=60, name="40 × 48 short")]
+    auto = _run_auto(lines, types)
+
+    def floor(r):
+        return round(sum(p.length * p.width for p in r.pallets), 3)
+
+    for t in types:
+        single = pack(lines, t, "tightest")
+        assert (len(auto.unplaced), auto.pallet_count) <= (len(single.unplaced), single.pallet_count)
+        if (len(auto.unplaced), auto.pallet_count) == (len(single.unplaced), single.pallet_count):
+            assert floor(auto) <= floor(single) + 1e-6

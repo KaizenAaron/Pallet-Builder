@@ -182,6 +182,7 @@ export interface PalletType {
   max_gross_weight: number;
   max_overhang: number;
   is_default: boolean;
+  auto_select: boolean;
 }
 
 export type PackingMode = "layered" | "tightest";
@@ -192,6 +193,7 @@ export interface ShipmentSummary {
   reference: string;
   ship_date: string | null;
   packing_mode: PackingMode;
+  pallet_selection: "auto" | "fixed";
   status: "draft" | "calculated";
   stale: boolean;
   pallet_count: number;
@@ -246,6 +248,18 @@ export interface PalletResult {
   freight_class: string;
   box_summary: BoxSummaryRow[];
   layout: Placement[];
+  pallet_spec: PalletSpecSnapshot | null;
+  deck?: { length: number; width: number; deck_height: number };
+}
+export interface PalletSpecSnapshot {
+  name: string;
+  length: number;
+  width: number;
+  deck_height: number;
+  tare_weight: number;
+  max_total_height: number;
+  max_gross_weight: number;
+  max_overhang: number;
 }
 export interface ShipmentDetail extends ShipmentSummary {
   notes: string;

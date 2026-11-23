@@ -11,14 +11,14 @@ The pallet deck occupies x in [0, length], y in [0, width].
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from itertools import permutations
 
 EPS = 1e-6
 
 # Bump whenever packing rules change, so saved estimates made under older rules show as
 # "out of date" (it is part of the shipment input fingerprint).
-ENGINE_VERSION = "4"
+ENGINE_VERSION = "5"
 
 # Stability: a box that isn't marked this-side-up may not stand on a face whose height is more
 # than this many times the narrower side of that face (no 50" boxes standing on end, no panels
@@ -101,6 +101,11 @@ class PalletSpec:
     max_total_height: float = 72.0  # floor to top of load, deck included
     max_gross_weight: float = 2500.0  # load + tare
     max_overhang: float = 0.0  # per side
+    name: str = ""  # pallet type name, carried into results (automatic selection mixes types)
+
+    @property
+    def deck_area(self) -> float:
+        return self.length * self.width
 
     def fits_footprint(self, dx: float, dy: float, dz: float) -> bool:
         o = self.max_overhang
@@ -169,6 +174,7 @@ class PalletResult:
     density: float
     freight_class: str
     box_summary: list[dict]
+    pallet: "PalletSpec | None" = None  # the pallet type this pallet was built on
 
     def to_dict(self) -> dict:
         return {
@@ -182,6 +188,7 @@ class PalletResult:
             "density": self.density,
             "freight_class": self.freight_class,
             "box_summary": self.box_summary,
+            "pallet": asdict(self.pallet) if self.pallet is not None else None,
             "placements": [p.to_dict() for p in self.placements],
         }
 

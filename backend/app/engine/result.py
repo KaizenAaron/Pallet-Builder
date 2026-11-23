@@ -59,4 +59,5 @@ def finalize_pallet(index: int, state: PalletState) -> PalletResult:
         density=_r(dens),
         freight_class=freight_class(dens),
         box_summary=box_summary,
+        pallet=spec,
     )

@@ -78,7 +78,7 @@ export default function PalletViewer(props: PalletViewerProps) {
   useEffect(() => {
     const s = sceneRef.current;
     if (!s || !pallet) return;
-    s.load(pallet, deck, colors);
+    s.load(pallet, pallet.deck ?? deck, colors);
     s.setDimensions(dims, (v) => f.len(v));
     s.setHighlight(highlight);
     setStep(pallet.layout.length);
@@ -108,7 +108,10 @@ export default function PalletViewer(props: PalletViewerProps) {
             className={p.index === pallet.index ? "on" : ""}
             onClick={() => onSelect(p.index)}
           >
-            <strong>Pallet {p.index}</strong>
+            <strong>
+              Pallet {p.index}
+              {p.pallet_spec?.name && pallets.some((q) => q.pallet_spec?.name !== p.pallet_spec?.name) ? ` · ${p.pallet_spec.name}` : ""}
+            </strong>
             {!mobile && (
               <span className="muted small">
                 {f.dims(p.length, p.width, p.height)} · {f.weight(p.gross_weight, 0)}

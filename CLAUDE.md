@@ -86,6 +86,16 @@ docker compose up --build                           # app at http://localhost:80
   of identical boxes, adds pallets) and a hard "denser always below" rule (extra pallets on 73 of
   120 random orders). For truly fragile boxes, the box index's Max load on top / Stackable is the
   exact tool.
+- **Automatic pallet selection** (`engine.pack_auto`, signed off by the user): the order is packed
+  on *every* candidate pallet type (one full search each), then each pallet of each run is
+  **right-sized** — its boxes alone are re-packed onto the smallest candidate deck that takes them
+  on one pallet (cheap necessary-condition checks and a quick packing first; full search only for
+  the final layout). Only runs with the best (unplaced, pallet count) are right-sized. Best =
+  fewest unplaced, fewest pallets, **least total floor space** (each pallet's overall L×W), then the
+  usual score; pallets listed largest first. One candidate ⇒ exactly `pack()`. Never worse than any
+  single type (randomized check: 0 worse, better on 48 of 80). Tried and rejected: skipping full
+  runs for types a bigger type "covers" (right-sizing alone then lost floor space on ~1 in 4
+  orders). Each `PalletResult.pallet` / `shipment_pallets.pallet_spec` is that pallet's own type.
 - **Golden numbers are pinned**: `tests/engine/test_engine.py` expected values are hand-checked
   (each docstring shows the arithmetic). If a change breaks them, the change is wrong (or needs
   explicit sign-off from the user), not the tests.
@@ -149,11 +159,16 @@ docker compose up --build                           # app at http://localhost:80
   pallets (incl. `layout` placements for the 3D view/PDF) plus `input_hash`, a SHA-256 of
   everything the engine saw (lines, each product's boxes at that moment, the pallet spec, the
   mode). `is_stale()` recomputes it on read; any later edit shows "Out of date" instead of
-  silently changing a quoted estimate. Lines keep `sku`/`product_name` and the shipment keeps
+  silently changing a quoted estimate. **Pallet selection**: `shipments.pallet_selection` is `auto`
+  (default for new shipments: candidates = the company's pallet types with `auto_select`, falling
+  back to the default type) or `fixed` (`pallet_type`). The fingerprint covers every candidate, so
+  editing any of them marks automatic estimates out of date; `shipment.pallet_spec` is then a
+  summary (`{"selection": "auto", "name": "2 × 48 × 40, 1 × 48 × 48"}`) and each pallet row has
+  its own spec. Shipments that existed before 0005 were migrated as `fixed`. Lines keep `sku`/`product_name` and the shipment keeps
   `pallet_spec` so deleting a product or pallet type never breaks old shipments (FKs are
   `SET NULL`; SQLite gets `PRAGMA foreign_keys=ON` in `db.py` so it behaves like Postgres).
   **Size guard** (`LIMITS` in `services/shipments.py`): boxes and boxes × distinct box types are
-  capped per mode (tightest is ~5–10× slower) so a request can't tie up the server — numbers come
+  capped per mode and divided by the number of candidate pallet types (each is a full search) (tightest is ~5–10× slower) so a request can't tie up the server — numbers come
   from timing the engine (v4: worst allowed order ≈ 11–12 s); re-measure before raising them.
 - **Engine performance**: `PalletState` caches box specs that found no position since the last
   placement (`_no_fit`) and rejects boxes that can't fit by remaining weight/volume. Both are

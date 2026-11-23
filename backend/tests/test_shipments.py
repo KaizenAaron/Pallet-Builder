@@ -43,7 +43,9 @@ def test_golden_single_sku(acme):
     assert (p1["length"], p1["width"], p1["height"], p1["gross_weight"], p1["freight_class"]) == (48, 40, 65.5, 1005, "85")
     assert (p2["height"], p2["gross_weight"]) == (15.5, 85)
     assert len(p1["layout"]) == 96 and {"x", "y", "z", "dx", "dy", "dz", "sku"} <= set(p1["layout"][0])
-    assert r["pallet_spec"]["name"] == "48 × 40 GMA"
+    assert r["pallet_spec"]["name"] == "2 × 48 × 40 GMA"  # automatic: a summary of the types used
+    assert out["pallet_selection"] == "auto"
+    assert {p["pallet_spec"]["name"] for p in r["pallets"]} == {"48 × 40 GMA"}
     assert (out["customer"], out["reference"], out["ship_date"], out["notes"]) == ("Cust", "SO123", "2026-12-01", "Dock 4")
 
 
@@ -110,7 +112,7 @@ def test_deleting_product_or_pallet_type_keeps_old_shipments(acme):
     extra = acme.post("/api/pallet-types", json={
         "name": "Big", "length": 48, "width": 48, "deck_height": 6, "tare_weight": 50,
         "max_total_height": 80, "max_gross_weight": 3000}).json()
-    sh = shipment(acme, [(pid, 10)], pallet_type_id=extra["id"])
+    sh = shipment(acme, [(pid, 10)], pallet_type_id=extra["id"], pallet_selection="fixed")
     calc(acme, sh["id"])
     acme.delete(f"/api/pallet-types/{extra['id']}")
     out = acme.get(f"/api/shipments/{sh['id']}").json()
@@ -202,3 +204,39 @@ def test_engine_rule_change_marks_estimates_out_of_date(acme, monkeypatch):
     monkeypatch.setattr(engine, "ENGINE_VERSION", "test-next")
     assert acme.get(f"/api/shipments/{sh['id']}").json()["stale"] is True
     assert calc(acme, sh["id"])["stale"] is False
+
+
+PT_SQUARE = {"name": "48 × 48", "length": 48, "width": 48, "deck_height": 5.5, "tare_weight": 50,
+             "max_total_height": 72, "max_gross_weight": 2500, "max_overhang": 0}
+
+
+def test_automatic_mixes_pallet_types(acme):
+    """A crate that needs a 48×48 plus 120 small cartons: one 48×48 (with the crate) + one 48×40."""
+    acme.post("/api/pallet-types", json=PT_SQUARE)
+    crate = product(acme, "CRATE", {"box_no": 1, "length": 47, "width": 46, "height": 20, "weight": 60,
+                                    "this_side_up": True})
+    small = product(acme, "SMALL", SMALL)
+    sh = shipment(acme, [(crate, 1), (small, 120)], packing_mode="tightest")
+    r = calc(acme, sh["id"])["results"]
+    assert [p["pallet_spec"]["name"] for p in r["pallets"]] == ["48 × 48", "48 × 40 GMA"]
+    assert r["pallet_spec"]["name"] == "1 × 48 × 48, 1 × 48 × 40 GMA"
+    assert (r["pallets"][1]["length"], r["pallets"][1]["width"]) == (48, 40)
+    # forcing the 48×48 puts both pallets on it
+    square = next(p for p in acme.get("/api/pallet-types").json() if p["name"] == "48 × 48")
+    acme.put(f"/api/shipments/{sh['id']}", json={
+        "pallet_selection": "fixed", "pallet_type_id": square["id"], "packing_mode": "tightest",
+        "lines": [{"product_id": crate, "quantity": 1}, {"product_id": small, "quantity": 120}]})
+    r = calc(acme, sh["id"])["results"]
+    assert {p["pallet_spec"]["name"] for p in r["pallets"]} == {"48 × 48"} and r["pallet_count"] == 2
+
+
+def test_automatic_respects_opt_out_and_goes_stale(acme):
+    square = acme.post("/api/pallet-types", json={**PT_SQUARE, "auto_select": False}).json()
+    assert square["auto_select"] is False
+    pid = product(acme, "A", SMALL)
+    sh = shipment(acme, [(pid, 10)])
+    r = calc(acme, sh["id"])["results"]
+    assert {p["pallet_spec"]["name"] for p in r["pallets"]} == {"48 × 40 GMA"}
+    # ticking it back in (or editing any candidate type) makes the estimate out of date
+    acme.put(f"/api/pallet-types/{square['id']}", json={**PT_SQUARE, "auto_select": True})
+    assert acme.get(f"/api/shipments/{sh['id']}").json()["stale"] is True

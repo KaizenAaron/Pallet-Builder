@@ -21,6 +21,7 @@ class PalletTypeIn(BaseModel):
     max_total_height: float = Field(gt=0, le=200)
     max_gross_weight: float = Field(gt=0, le=20000)
     max_overhang: float = Field(default=0, ge=0, le=12)
+    auto_select: bool = True
 
     @model_validator(mode="after")
     def _limits(self):
@@ -32,7 +33,7 @@ class PalletTypeIn(BaseModel):
 
 
 def payload(p: PalletType) -> dict:
-    return {"id": p.id, "is_default": p.is_default, **{f: getattr(p, f) for f in FIELDS}}
+    return {"id": p.id, "is_default": p.is_default, "auto_select": p.auto_select, **{f: getattr(p, f) for f in FIELDS}}
 
 
 def _all(tenant: Tenant) -> list[PalletType]:

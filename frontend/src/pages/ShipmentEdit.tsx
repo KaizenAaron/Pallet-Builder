@@ -31,12 +31,21 @@ interface Header {
   reference: string;
   ship_date: string;
   notes: string;
+  pallet_selection: "auto" | "fixed";
   pallet_type_id: number | null;
   packing_mode: PackingMode;
 }
 
 let nextKey = 1;
-const EMPTY_HEADER: Header = { customer: "", reference: "", ship_date: "", notes: "", pallet_type_id: null, packing_mode: "layered" };
+const EMPTY_HEADER: Header = {
+  customer: "",
+  reference: "",
+  ship_date: "",
+  notes: "",
+  pallet_selection: "auto",
+  pallet_type_id: null,
+  packing_mode: "layered",
+};
 
 export default function ShipmentEditPage() {
   const { id } = useParams();
@@ -63,6 +72,7 @@ export default function ShipmentEditPage() {
       reference: s.reference,
       ship_date: s.ship_date ?? "",
       notes: s.notes,
+      pallet_selection: s.pallet_selection,
       pallet_type_id: s.pallet_type_id,
       packing_mode: s.packing_mode,
     });
@@ -84,7 +94,7 @@ export default function ShipmentEditPage() {
     api<PalletType[]>("/pallet-types")
       .then((pts) => {
         setPalletTypes(pts);
-        if (isNew) setHeader((h) => ({ ...h, pallet_type_id: pts.find((p) => p.is_default)?.id ?? pts[0]?.id ?? null }));
+
       })
       .catch((e: Error) => setError(e.message));
     if (!isNew) api<ShipmentDetail>(`/shipments/${id}`).then(load).catch((e: Error) => setError(e.message));
@@ -108,6 +118,7 @@ export default function ShipmentEditPage() {
       reference: h.reference,
       ship_date: h.ship_date || null,
       notes: h.notes,
+      pallet_selection: h.pallet_selection,
       pallet_type_id: h.pallet_type_id,
       packing_mode: h.packing_mode,
       lines: parsed,
@@ -184,6 +195,14 @@ export default function ShipmentEditPage() {
     const ps = shipment?.results?.pallet_spec;
     return { length: ps?.length ?? 48, width: ps?.width ?? 40, deck_height: ps?.deck_height ?? 5.5 };
   }, [shipment]);
+  // each pallet is drawn on its own deck (automatic selection can mix pallet types)
+  const viewerPallets = useMemo(
+    () =>
+      (shipment?.results?.pallets ?? []).map((p) =>
+        p.pallet_spec?.length ? { ...p, deck: { length: p.pallet_spec.length, width: p.pallet_spec.width, deck_height: p.pallet_spec.deck_height } } : p,
+      ),
+    [shipment],
+  );
   const cacheKey = `${shipment?.id}|${shipment?.calculated_at}`;
   useEffect(() => {
     setSelectedPallet(1);
@@ -364,13 +383,24 @@ export default function ShipmentEditPage() {
             <Field label="Pallet type" htmlFor="pt">
               <Select
                 id="pt"
-                value={header.pallet_type_id ?? ""}
-                onChange={(e) => setH("pallet_type_id", e.target.value ? Number(e.target.value) : null)}
+                value={header.pallet_selection === "auto" ? "auto" : String(header.pallet_type_id ?? "")}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setHeader((h) =>
+                    v === "auto"
+                      ? { ...h, pallet_selection: "auto" }
+                      : { ...h, pallet_selection: "fixed", pallet_type_id: v ? Number(v) : null },
+                  );
+                  setDirty(true);
+                }}
               >
-                {header.pallet_type_id == null && <option value="">(deleted pallet type)</option>}
+                <option value="auto">Automatic — best fit</option>
+                {header.pallet_selection === "fixed" && header.pallet_type_id == null && (
+                  <option value="">(deleted pallet type)</option>
+                )}
                 {palletTypes.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    Only {p.name}
                     {p.is_default ? " (default)" : ""}
                   </option>
                 ))}
@@ -406,6 +436,12 @@ export default function ShipmentEditPage() {
             </Button>
           </div>
         </div>
+        {header.pallet_selection === "auto" && (
+          <p className="small muted" style={{ marginTop: -4 }}>
+            Automatic picks the pallet for each pallet from your pallet types (those ticked “Use in automatic
+            selection”): fewest pallets first, then the least floor space — a bigger pallet only where a box needs it.
+          </p>
+        )}
         <p className="small muted" style={{ marginTop: -4, marginBottom: 0 }}>
           {header.packing_mode === "layered"
             ? "Layered: full layers of one box type, heaviest at the bottom — easy to build on the dock."
@@ -452,7 +488,7 @@ export default function ShipmentEditPage() {
             </Card>
           </div>
           <p className="small muted">
-            {shipment.calculated_mode === "tightest" ? "Tightest fit" : "Layered"} on {results.pallet_spec?.name ?? ptName} ·
+            {shipment.calculated_mode === "tightest" ? "Tightest fit" : "Layered"} · {results.pallet_spec?.name ?? ptName} ·
             calculated {shipment.calculated_at ? new Date(shipment.calculated_at).toLocaleString() : ""}
           </p>
           {results.warnings.length > 0 && (
@@ -467,7 +503,7 @@ export default function ShipmentEditPage() {
               <Suspense fallback={<div className="card muted">Loading 3D view…</div>}>
                 <PalletViewer
                   cacheKey={cacheKey}
-                  pallets={results.pallets}
+                  pallets={viewerPallets}
                   deck={deck}
                   colors={colors}
                   selected={selectedPallet}
@@ -531,6 +567,7 @@ function PalletCard({
         <h2 style={{ margin: 0 }}>
           Pallet {p.index} <span className="muted small">of {count}</span>
         </h2>
+        {p.pallet_spec?.name && <Badge tone="admin">{p.pallet_spec.name}</Badge>}
         <span className="spacer" />
         <Badge>{boxes} boxes</Badge>
       </div>

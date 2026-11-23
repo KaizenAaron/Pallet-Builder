@@ -29,7 +29,8 @@ class ShipmentIn(BaseModel):
     reference: str = Field(default="", max_length=100)
     ship_date: date | None = None
     notes: str = Field(default="", max_length=5000)
-    pallet_type_id: int | None = None
+    pallet_selection: str = Field(default="auto", pattern="^(auto|fixed)$")
+    pallet_type_id: int | None = None  # used when pallet_selection is "fixed"
     packing_mode: str = Field(default="layered", pattern="^(layered|tightest)$")
     lines: list[LineIn] = Field(default_factory=list, max_length=MAX_LINES)
 
@@ -46,6 +47,7 @@ def summary_payload(s: Shipment, stale: bool) -> dict:
         "reference": s.reference,
         "ship_date": s.ship_date.isoformat() if s.ship_date else None,
         "packing_mode": s.packing_mode,
+        "pallet_selection": s.pallet_selection,
         "status": s.status,
         "stale": stale,
         "pallet_count": s.pallet_count,
@@ -97,6 +99,7 @@ def detail_payload(tenant: Tenant, s: Shipment) -> dict:
                     "net_weight": p.net_weight, "gross_weight": p.gross_weight, "cubic_feet": p.cubic_feet,
                     "density": p.density, "freight_class": p.freight_class, "box_summary": p.box_summary,
                     "layout": p.layout,
+                    "pallet_spec": p.pallet_spec or s.pallet_spec,
                 }
                 for p in s.pallets
             ],
@@ -139,7 +142,13 @@ def _apply(tenant: Tenant, s: Shipment, body: ShipmentIn) -> None:
     s.ship_date = body.ship_date
     s.notes = body.notes.strip()
     s.packing_mode = body.packing_mode
-    pt = _pallet_type(tenant, body.pallet_type_id)
+    s.pallet_selection = body.pallet_selection
+    if body.pallet_selection == "fixed":
+        pt = _pallet_type(tenant, body.pallet_type_id)
+    elif body.pallet_type_id is not None:
+        pt = _pallet_type(tenant, body.pallet_type_id)  # validated, remembered for switching back
+    else:
+        pt = None
     s.pallet_type_id = pt.id if pt else None
     s.pallet_type = pt
     s.lines.clear()
@@ -274,7 +283,7 @@ def duplicate_shipment(shipment_id: int, tenant: Tenant = Depends(get_tenant)) -
     s = Shipment(
         company_id=tenant.company_id, number=_next_number(tenant), created_by_id=tenant.user.id,
         customer=src.customer, reference=src.reference, ship_date=src.ship_date, notes=src.notes,
-        pallet_type_id=src.pallet_type_id, packing_mode=src.packing_mode,
+        pallet_type_id=src.pallet_type_id, packing_mode=src.packing_mode, pallet_selection=src.pallet_selection,
     )
     for ln in src.lines:
         s.lines.append(ShipmentLine(

@@ -36,8 +36,10 @@ class TooLarge(ValueError):
 
 def pallet_spec_for(pt: PalletType | None, snapshot: dict | None = None) -> engine.PalletSpec:
     if pt is None:
-        if snapshot:
-            return engine.PalletSpec(**{k: snapshot[k] for k in engine.PalletSpec.__dataclass_fields__})
+        if snapshot and "length" in snapshot:
+            return engine.PalletSpec(
+                **{k: snapshot[k] for k in engine.PalletSpec.__dataclass_fields__ if k in snapshot}
+            )
         return engine.PalletSpec()
     return engine.PalletSpec(
         length=pt.length,
@@ -47,7 +49,30 @@ def pallet_spec_for(pt: PalletType | None, snapshot: dict | None = None) -> engi
         max_total_height=pt.max_total_height,
         max_gross_weight=pt.max_gross_weight,
         max_overhang=pt.max_overhang,
+        name=pt.name,
     )
+
+
+def candidate_specs(db: Session, shipment: Shipment) -> list[engine.PalletSpec]:
+    """The pallet types the engine may use. Fixed: the shipment's type (or its snapshot if the type
+    was deleted). Automatic: every type ticked "Use in automatic selection", falling back to the
+    company default, then to any type."""
+    if shipment.pallet_selection != "auto":
+        return [pallet_spec_for(shipment.pallet_type, None if shipment.pallet_type else shipment.pallet_spec)]
+    types = db.scalars(
+        select(PalletType).where(PalletType.company_id == shipment.company_id).order_by(PalletType.id)
+    ).all()
+    chosen = [t for t in types if t.auto_select] or [t for t in types if t.is_default] or list(types[:1])
+    return [pallet_spec_for(t) for t in chosen] or [engine.PalletSpec()]
+
+
+def summary_label(pallets: list) -> str:
+    """'2 × 48 × 40 GMA, 1 × 48 × 48' — pallet type counts in the order they first appear."""
+    counts: dict[str, int] = {}
+    for p in pallets:
+        name = (p.pallet.name if p.pallet else "") or "Pallet"
+        counts[name] = counts.get(name, 0) + 1
+    return ", ".join(f"{n} × {name}" for name, n in counts.items())
 
 
 def engine_lines(db: Session, shipment: Shipment) -> list[engine.ShipmentLine]:
@@ -81,11 +106,11 @@ def engine_lines(db: Session, shipment: Shipment) -> list[engine.ShipmentLine]:
     return out
 
 
-def fingerprint(lines: list[engine.ShipmentLine], spec: engine.PalletSpec, mode: str) -> str:
+def fingerprint(lines: list[engine.ShipmentLine], specs: list[engine.PalletSpec], mode: str) -> str:
     payload = {
         "engine": engine.ENGINE_VERSION,  # rule changes make old estimates "out of date"
         "mode": mode,
-        "pallet": asdict(spec),
+        "pallets": [asdict(s) for s in specs],  # every candidate type (automatic) or the fixed one
         "lines": [
             {"product": ln.product_id, "qty": ln.quantity, "boxes": [asdict(b) for b in ln.boxes]}
             for ln in lines
@@ -94,10 +119,12 @@ def fingerprint(lines: list[engine.ShipmentLine], spec: engine.PalletSpec, mode:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()
 
 
-def current_inputs(db: Session, shipment: Shipment) -> tuple[list[engine.ShipmentLine], engine.PalletSpec, str]:
+def current_inputs(
+    db: Session, shipment: Shipment
+) -> tuple[list[engine.ShipmentLine], list[engine.PalletSpec], str]:
     lines = engine_lines(db, shipment)
-    spec = pallet_spec_for(shipment.pallet_type, None if shipment.pallet_type else shipment.pallet_spec)
-    return lines, spec, fingerprint(lines, spec, shipment.packing_mode)
+    specs = candidate_specs(db, shipment)
+    return lines, specs, fingerprint(lines, specs, shipment.packing_mode)
 
 
 def is_stale(db: Session, shipment: Shipment) -> bool:
@@ -106,25 +133,28 @@ def is_stale(db: Session, shipment: Shipment) -> bool:
     return current_inputs(db, shipment)[2] != shipment.input_hash
 
 
-def check_size(lines: list[engine.ShipmentLine], mode: str) -> int:
+def check_size(lines: list[engine.ShipmentLine], mode: str, n_types: int = 1) -> int:
+    """Each candidate pallet type is one full search, so the budget is shared between them."""
     boxes, _ = expand_lines(lines)
     kinds = len({b.spec for b in boxes})
     lim = LIMITS[mode]
-    if len(boxes) > lim["boxes"] or len(boxes) * kinds > lim["work"]:
+    n = max(1, n_types)
+    if len(boxes) > lim["boxes"] / n or len(boxes) * kinds > lim["work"] / n:
         hint = " Try Layered mode, or split the order into several shipments." if mode == "tightest" else (
             " Split the order into several shipments."
         )
         raise TooLarge(
             f"This shipment has {len(boxes):,} boxes of {kinds:,} different sizes — too many to calculate "
-            f"in {'Tightest fit' if mode == 'tightest' else 'Layered'} mode.{hint}"
+            f"in {'Tightest fit' if mode == 'tightest' else 'Layered'} mode"
+            f"{f' with {n} pallet types to choose from' if n > 1 else ''}.{hint}"
         )
     return len(boxes)
 
 
 def calculate(db: Session, shipment: Shipment) -> Shipment:
-    lines, spec, digest = current_inputs(db, shipment)
-    check_size(lines, shipment.packing_mode)
-    result = engine.pack(lines, spec, shipment.packing_mode)
+    lines, specs, digest = current_inputs(db, shipment)
+    check_size(lines, shipment.packing_mode, len(specs))
+    result = engine.pack_auto(lines, specs, shipment.packing_mode)  # one type = plain pack()
 
     shipment.pallets.clear()
     db.flush()
@@ -134,6 +164,7 @@ def calculate(db: Session, shipment: Shipment) -> Shipment:
             net_weight=p.net_weight, gross_weight=p.gross_weight, cubic_feet=p.cubic_feet, density=p.density,
             freight_class=p.freight_class, box_summary=p.box_summary,
             layout=[pl.to_dict() for pl in p.placements],
+            pallet_spec=asdict(p.pallet) if p.pallet else None,
         ))
     d = result.to_dict()
     shipment.status = "calculated"
@@ -145,7 +176,10 @@ def calculate(db: Session, shipment: Shipment) -> Shipment:
     shipment.total_cubic_feet = round(sum(p.cubic_feet for p in result.pallets), 2)
     shipment.warnings = d["warnings"]
     shipment.unplaced = d["unplaced"]
-    shipment.pallet_spec = asdict(spec) | (
-        {"name": shipment.pallet_type.name} if shipment.pallet_type else {"name": (shipment.pallet_spec or {}).get("name", "")}
-    )
+    if shipment.pallet_selection == "auto":
+        # a summary; each pallet carries its own spec
+        shipment.pallet_spec = {"selection": "auto", "name": summary_label(result.pallets)}
+    else:
+        spec = specs[0]
+        shipment.pallet_spec = asdict(spec) | {"name": spec.name or (shipment.pallet_spec or {}).get("name", "")}
     return shipment

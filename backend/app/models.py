@@ -130,6 +130,7 @@ class PalletType(TenantMixin, Base):
     max_gross_weight: Mapped[float] = mapped_column(Float, default=2500.0)
     max_overhang: Mapped[float] = mapped_column(Float, default=0.0)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_select: Mapped[bool] = mapped_column(Boolean, default=True)  # candidate for automatic selection
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -190,6 +191,9 @@ class Shipment(TenantMixin, Base):
     notes: Mapped[str] = mapped_column(Text, default="")
     pallet_type_id: Mapped[int | None] = mapped_column(ForeignKey("pallet_types.id", ondelete="SET NULL"), nullable=True)
     packing_mode: Mapped[str] = mapped_column(String(10), default="layered")
+    # auto = the engine picks the pallet type per pallet from the company's auto_select types;
+    # fixed = every pallet uses pallet_type
+    pallet_selection: Mapped[str] = mapped_column(String(5), default="auto")
 
     status: Mapped[str] = mapped_column(String(12), default="draft")  # draft | calculated
     calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -253,6 +257,7 @@ class ShipmentPallet(TenantMixin, Base):
     freight_class: Mapped[str] = mapped_column(String(10))
     box_summary: Mapped[list] = mapped_column(JSON, default=list)
     layout: Mapped[list] = mapped_column(JSON, default=list)
+    pallet_spec: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # the type this pallet uses
 
     shipment: Mapped[Shipment] = relationship(back_populates="pallets")
 

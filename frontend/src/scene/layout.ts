@@ -24,6 +24,7 @@ export interface ScenePallet {
   width: number;
   height: number; // deck included
   layout: ScenePlacement[];
+  deck?: PalletDeck; // this pallet's own deck (automatic selection mixes pallet types)
 }
 
 export interface PalletDeck {
